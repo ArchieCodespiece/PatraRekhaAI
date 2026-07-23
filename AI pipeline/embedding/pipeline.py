@@ -1,8 +1,8 @@
 from typing import List
 
 from Chunking.models import Chunk
-from models import EmbeddedChunk, EmbeddingResult
-from embedder import GeminiEmbedder
+from .embedder import GeminiEmbedder
+from .models import EmbeddedChunk, EmbeddingResult
 
 
 class EmbeddingPipeline:
