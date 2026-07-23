@@ -1,7 +1,7 @@
 """Wrappers for standard file storage queries."""
 
 import os
-from urllib import parse
+from uuid import UUID
 
 from db.supabase_client import supabase
 
@@ -46,3 +46,25 @@ def insert_file_record(filename, content_type, file_size, file_url):
 def store_file(filename, content, content_type):
     upload_file_to_bucket(filename, content, content_type)
     return insert_file_record(filename, content_type, len(content), get_file_url(filename))
+
+
+def list_documents():
+    response = (
+        supabase.table(FILES_TABLE)
+        .select("file_id,filename,file_type,file_size,file_url,created_at,uploaded_at")
+        .order("uploaded_at", desc=True)
+        .execute()
+    )
+    return response.data
+
+
+def get_document_file_url(file_id):
+    UUID(str(file_id))
+    response = (
+        supabase.table(FILES_TABLE)
+        .select("file_url")
+        .eq("file_id", str(file_id))
+        .limit(1)
+        .execute()
+    )
+    return response.data[0]["file_url"] if response.data else None
