@@ -1,0 +1,10 @@
+numpy
+opencv-python
+pdf2image
+pdfplumber
+paddleocr
+paddlepaddle
+Pillow
+pdfminer.six
+pypdfium2
+shapely
