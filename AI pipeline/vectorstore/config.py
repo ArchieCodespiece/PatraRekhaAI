@@ -25,7 +25,7 @@ if not PINECONE_API_KEY:
 # Pinecone Index Configuration
 # ---------------------------------------------------------------------
 
-PINECONE_INDEX_NAME = "patrarekha-1"
+PINECONE_INDEX_NAME = "patrarekha-2"
 
 PINECONE_CLOUD = "aws"
 
