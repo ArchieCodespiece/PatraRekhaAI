@@ -1,0 +1,16 @@
+# --- Document Preprocessing Dependencies ---
+numpy
+opencv-python
+pdf2image
+pdfplumber
+paddleocr
+paddlepaddle
+Pillow
+pdfminer.six
+pypdfium2
+shapely
+
+# --- AI Pipeline Dependencies ---
+google-genai>=1.28.0
+pinecone>=7.3.0
+python-dotenv>=1.0.1

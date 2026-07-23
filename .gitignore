@@ -180,3 +180,23 @@ Thumbs.db
 
 .vscode/
 .idea/
+
+# =========================
+# Custom / Workspace Additions
+# =========================
+# Virtual environments at the root
+.venv/
+venv/
+env/
+venv
+# OCR outputs in ingestion folder
+ingestion/*.json
+
+# Checkpoint / output JSONs anywhere
+**/paddle_output.json
+**/paddle2_checkpoint.json
+
+# Environment variables
+**/.env
+AI pipeline/.env
+**/.env.*
