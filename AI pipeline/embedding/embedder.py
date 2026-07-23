@@ -8,7 +8,7 @@ from typing import List
 
 from google import genai
 
-from config import GEMINI_API_KEY, EMBEDDING_MODEL
+from .config import GEMINI_API_KEY, EMBEDDING_MODEL
 
 
 class GeminiEmbedder:

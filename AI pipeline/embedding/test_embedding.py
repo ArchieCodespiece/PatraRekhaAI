@@ -11,7 +11,7 @@ AI_PIPELINE_DIR = Path(__file__).resolve().parents[1]
 if str(AI_PIPELINE_DIR) not in sys.path:
     sys.path.insert(0, str(AI_PIPELINE_DIR))
 
-from pipeline import EmbeddingPipeline
+from embedding.pipeline import EmbeddingPipeline
 from Chunking.pipeline import ChunkPipeline
 
 

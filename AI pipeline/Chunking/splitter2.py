@@ -37,13 +37,17 @@ class SemanticSplitter(SemanticSplitter):
         chunks: list[Chunk] = []
 
         for section in sections:
-
             chunks.extend(
                 self._split_section(
                     document,
                     section,
                 )
             )
+
+        # Assign document-wide indices
+        for idx, chunk in enumerate(chunks, start=1):
+            chunk.metadata.chunk_index = idx
+            chunk.metadata.chunk_id = f"{document.document_id}_{idx}"
 
         return chunks
 
