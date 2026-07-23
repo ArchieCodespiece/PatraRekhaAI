@@ -12,36 +12,85 @@ import {
     Calendar as CalendarIcon,
     AlertCircle,
     Tag,
-    Trash2
+    Trash2,
+    AlertTriangle,
+    Flame,
+    Info
 } from "lucide-react";
 import "react-day-picker/style.css";
 
-// Sample events list
+// Priority config
+const PRIORITY_CONFIG = {
+    high: {
+        label: "High Priority",
+        color: "bg-[#EF4444]",
+        textColor: "text-[#EF4444]",
+        borderColor: "border-[#EF4444]/40",
+        bgColor: "bg-[#EF4444]/10",
+        badgeBg: "bg-[#EF4444]/20 text-[#EF4444] border border-[#EF4444]/30",
+        dotClass: "bg-[#EF4444]",
+        icon: Flame,
+    },
+    medium: {
+        label: "Medium Priority",
+        color: "bg-[#EAB308]",
+        textColor: "text-[#A16207]",
+        borderColor: "border-[#EAB308]/40",
+        bgColor: "bg-[#EAB308]/10",
+        badgeBg: "bg-[#EAB308]/20 text-[#A16207] border border-[#EAB308]/30",
+        dotClass: "bg-[#EAB308]",
+        icon: AlertTriangle,
+    },
+    normal: {
+        label: "Low Priority",
+        color: "bg-[#3B82F6]",
+        textColor: "text-[#2563EB]",
+        borderColor: "border-[#3B82F6]/40",
+        bgColor: "bg-[#3B82F6]/10",
+        badgeBg: "bg-[#3B82F6]/20 text-[#2563EB] border border-[#3B82F6]/30",
+        dotClass: "bg-[#3B82F6]",
+        icon: Info,
+    },
+};
+
+// Sample events with priority
 const initialEvents = [
     {
         id: "1",
         date: new Date(),
         title: "Project Sync & Standup",
-        time: "10:00 AM - 11:00 AM",
+        time: "10:00 AM – 11:00 AM",
         category: "Meeting",
-        completed: false
+        priority: "high",
+        completed: false,
     },
     {
         id: "2",
         date: new Date(),
         title: "Review PatraRekha UI Mockups",
-        time: "02:30 PM - 03:30 PM",
+        time: "02:30 PM – 03:30 PM",
         category: "Design",
-        completed: true
+        priority: "medium",
+        completed: true,
     },
     {
         id: "3",
-        date: new Date(Date.now() + 86400000 * 2), // 2 days later
+        date: new Date(Date.now() + 86400000 * 2),
         title: "Sprint Planning & Backlog Refinement",
-        time: "11:00 AM - 12:30 PM",
+        time: "11:00 AM – 12:30 PM",
         category: "Work",
-        completed: false
-    }
+        priority: "normal",
+        completed: false,
+    },
+    {
+        id: "4",
+        date: new Date(Date.now() + 86400000 * 4),
+        title: "Client Presentation – Q3 Roadmap",
+        time: "03:00 PM – 04:00 PM",
+        category: "Meeting",
+        priority: "high",
+        completed: false,
+    },
 ];
 
 export default function Calendar() {
@@ -51,11 +100,22 @@ export default function Calendar() {
     const [newEventTitle, setNewEventTitle] = useState("");
     const [newEventTime, setNewEventTime] = useState("09:00 AM");
     const [newEventCategory, setNewEventCategory] = useState("Meeting");
+    const [newEventPriority, setNewEventPriority] = useState("normal");
 
-    // Filter events for the currently selected date
     const selectedDateEvents = selectedDate
         ? events.filter((evt) => isSameDay(new Date(evt.date), selectedDate))
         : [];
+
+    // Build a map: date string -> highest priority on that date
+    const datePriorityMap = {};
+    const priorityOrder = { high: 3, medium: 2, normal: 1 };
+    events.forEach((evt) => {
+        const key = format(new Date(evt.date), "yyyy-MM-dd");
+        const existing = datePriorityMap[key];
+        if (!existing || priorityOrder[evt.priority] > priorityOrder[existing]) {
+            datePriorityMap[key] = evt.priority;
+        }
+    });
 
     const toggleEventComplete = (id) => {
         setEvents((prev) =>
@@ -78,16 +138,45 @@ export default function Calendar() {
             title: newEventTitle.trim(),
             time: newEventTime || "All Day",
             category: newEventCategory,
-            completed: false
+            priority: newEventPriority,
+            completed: false,
         };
         setEvents((prev) => [...prev, newEvt]);
         setNewEventTitle("");
         setIsAddingEvent(false);
     };
 
+    // Custom day render to add priority dot
+    const DayWithDot = ({ day, modifiers, ...props }) => {
+        const key = format(day.date, "yyyy-MM-dd");
+        const priority = datePriorityMap[key];
+        const cfg = priority ? PRIORITY_CONFIG[priority] : null;
+
+        return (
+            <div className="relative flex items-center justify-center h-10 w-10">
+                <button
+                    {...props}
+                    className={`flex h-9 w-9 items-center justify-center rounded-lg text-sm transition
+                        ${modifiers.selected ? "bg-blue-600 text-white font-semibold shadow-lg shadow-blue-950/50" : ""}
+                        ${modifiers.today && !modifiers.selected ? "border border-blue-500/60 bg-slate-800/80 font-bold text-blue-400" : ""}
+                        ${modifiers.outside ? "text-slate-600 opacity-40" : ""}
+                        ${!modifiers.selected && !modifiers.today && !modifiers.outside ? "text-slate-300 hover:bg-slate-800 hover:text-white" : ""}
+                    `}
+                >
+                    {day.date.getDate()}
+                </button>
+                {cfg && (
+                    <span
+                        className={`absolute bottom-0.5 left-1/2 -translate-x-1/2 h-1.5 w-1.5 rounded-full ${cfg.dotClass}`}
+                    />
+                )}
+            </div>
+        );
+    };
+
     return (
         <div className="w-full max-w-7xl mx-auto flex flex-col lg:flex-row gap-8 items-start">
-            {/* Left Side: Calendar Component */}
+            {/* Left Side: Calendar */}
             <div className="w-full lg:w-96 shrink-0 flex flex-col gap-4">
                 <div className="w-full rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-2xl select-none">
                     <DayPicker
@@ -123,10 +212,33 @@ export default function Calendar() {
                         }}
                         components={{
                             Chevron: ({ orientation }) => {
-                                if (orientation === "left") {
-                                    return <ChevronLeft size={16} />;
-                                }
+                                if (orientation === "left") return <ChevronLeft size={16} />;
                                 return <ChevronRight size={16} />;
+                            },
+                            DayButton: ({ day, modifiers, ...props }) => {
+                                const key = format(day.date, "yyyy-MM-dd");
+                                const priority = datePriorityMap[key];
+                                const cfg = priority ? PRIORITY_CONFIG[priority] : null;
+                                return (
+                                    <div className="relative flex items-center justify-center h-10 w-10">
+                                        <button
+                                            {...props}
+                                            className={`flex h-9 w-9 items-center justify-center rounded-lg text-sm transition
+                                                ${modifiers.selected ? "bg-blue-600 text-white font-semibold shadow-lg shadow-blue-950/50" : ""}
+                                                ${modifiers.today && !modifiers.selected ? "border border-blue-500/60 bg-slate-800/80 font-bold text-blue-400" : ""}
+                                                ${modifiers.outside ? "text-slate-600 opacity-40" : ""}
+                                                ${!modifiers.selected && !modifiers.today && !modifiers.outside ? "text-slate-300 hover:bg-slate-800 hover:text-white" : ""}
+                                            `}
+                                        >
+                                            {day.date.getDate()}
+                                        </button>
+                                        {cfg && (
+                                            <span
+                                                className={`absolute bottom-0.5 left-1/2 -translate-x-1/2 h-1.5 w-1.5 rounded-full ${cfg.dotClass}`}
+                                            />
+                                        )}
+                                    </div>
+                                );
                             }
                         }}
                     />
@@ -138,16 +250,33 @@ export default function Calendar() {
                         </span>
                     </div>
                 </div>
+
+                {/* Priority Legend */}
+                <div className="w-full rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-xl">
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-3">Priority Legend</p>
+                    <div className="flex flex-col gap-2">
+                        {Object.entries(PRIORITY_CONFIG).map(([key, cfg]) => {
+                            const Icon = cfg.icon;
+                            return (
+                                <div key={key} className="flex items-center gap-3">
+                                    <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${cfg.dotClass}`} />
+                                    <Icon size={13} className={cfg.textColor} />
+                                    <span className={`text-xs font-medium ${cfg.textColor}`}>{cfg.label}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
             </div>
 
-            {/* Right Side: Scheduled Events & Action List */}
+            {/* Right Side: Events */}
             <div className="flex-1 w-full rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl flex flex-col gap-6 min-h-[480px]">
                 {/* Events Header */}
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-5">
                     <div>
                         <div className="flex items-center gap-2">
                             <CalendarIcon className="text-blue-400" size={20} />
-                            <h2 className="text-lg font-bold text-white tracking-tight">
+                            <h2 className="text-lg font-bold text-foreground tracking-tight">
                                 {selectedDate ? format(selectedDate, "EEEE, MMMM d, yyyy") : "Select a Date"}
                             </h2>
                         </div>
@@ -184,15 +313,26 @@ export default function Calendar() {
                                 onChange={(e) => setNewEventTime(e.target.value)}
                                 className="w-full sm:w-36 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500"
                             />
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-3">
                             <select
                                 value={newEventCategory}
                                 onChange={(e) => setNewEventCategory(e.target.value)}
-                                className="w-full sm:w-32 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
+                                className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
                             >
                                 <option value="Meeting">Meeting</option>
                                 <option value="Work">Work</option>
                                 <option value="Design">Design</option>
                                 <option value="Personal">Personal</option>
+                            </select>
+                            <select
+                                value={newEventPriority}
+                                onChange={(e) => setNewEventPriority(e.target.value)}
+                                className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
+                            >
+                                <option value="high">🔴 High Priority</option>
+                                <option value="medium">🟡 Medium Priority</option>
+                                <option value="normal">🔵 Low Priority</option>
                             </select>
                         </div>
                         <div className="flex justify-end gap-2 mt-1">
@@ -216,52 +356,63 @@ export default function Calendar() {
                 {/* Event List */}
                 <div className="flex-1 flex flex-col gap-3">
                     {selectedDateEvents.length > 0 ? (
-                        selectedDateEvents.map((evt) => (
-                            <div
-                                key={evt.id}
-                                className={`group flex items-center justify-between gap-4 p-4 rounded-xl border transition-all ${
-                                    evt.completed
-                                        ? "bg-slate-950/60 border-slate-800/60 opacity-60"
-                                        : "bg-slate-950 border-slate-800 hover:border-slate-700 shadow-sm"
-                                }`}
-                            >
-                                <div className="flex items-center gap-3.5 min-w-0">
-                                    <button
-                                        onClick={() => toggleEventComplete(evt.id)}
-                                        className={`shrink-0 transition ${
-                                            evt.completed ? "text-green-400" : "text-slate-600 hover:text-slate-400"
-                                        }`}
-                                    >
-                                        <CheckCircle2 size={20} />
-                                    </button>
-                                    <div className="min-w-0">
-                                        <h4 className={`text-sm font-semibold truncate ${
-                                            evt.completed ? "line-through text-slate-400" : "text-slate-100"
-                                        }`}>
-                                            {evt.title}
-                                        </h4>
-                                        <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
-                                            <span className="flex items-center gap-1">
-                                                <Clock size={12} className="text-slate-500" />
-                                                {evt.time}
-                                            </span>
-                                            <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px]">
-                                                <Tag size={10} className="text-blue-400" />
-                                                {evt.category}
-                                            </span>
+                        selectedDateEvents.map((evt) => {
+                            const cfg = PRIORITY_CONFIG[evt.priority] || PRIORITY_CONFIG.normal;
+                            const PriorityIcon = cfg.icon;
+                            return (
+                                <div
+                                    key={evt.id}
+                                    className={`group flex items-center justify-between gap-4 p-4 rounded-xl border transition-all ${
+                                        evt.completed
+                                            ? "bg-slate-950/60 border-slate-800/60 opacity-60"
+                                            : `bg-slate-950 ${cfg.borderColor} hover:border-opacity-70 shadow-sm`
+                                    }`}
+                                >
+                                    {/* Left accent bar */}
+                                    <div className={`w-1 h-12 rounded-full shrink-0 ${evt.completed ? "bg-slate-700" : cfg.color}`} />
+
+                                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                                        <button
+                                            onClick={() => toggleEventComplete(evt.id)}
+                                            className={`shrink-0 transition ${
+                                                evt.completed ? "text-green-400" : "text-slate-600 hover:text-slate-400"
+                                            }`}
+                                        >
+                                            <CheckCircle2 size={20} />
+                                        </button>
+                                        <div className="min-w-0 flex-1">
+                                            <h4 className={`text-sm font-semibold truncate ${
+                                                evt.completed ? "line-through text-slate-400" : "text-slate-100"
+                                            }`}>
+                                                {evt.title}
+                                            </h4>
+                                            <div className="flex items-center flex-wrap gap-2 mt-1.5 text-xs text-slate-400">
+                                                <span className="flex items-center gap-1">
+                                                    <Clock size={12} className="text-slate-500" />
+                                                    {evt.time}
+                                                </span>
+                                                <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px]">
+                                                    <Tag size={10} className="text-blue-400" />
+                                                    {evt.category}
+                                                </span>
+                                                <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium ${cfg.badgeBg}`}>
+                                                    <PriorityIcon size={10} />
+                                                    {cfg.label}
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                <button
-                                    onClick={() => deleteEvent(evt.id)}
-                                    className="opacity-0 group-hover:opacity-100 p-2 text-slate-500 hover:text-red-400 transition rounded-lg hover:bg-slate-800"
-                                    title="Delete event"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </div>
-                        ))
+                                    <button
+                                        onClick={() => deleteEvent(evt.id)}
+                                        className="opacity-0 group-hover:opacity-100 p-2 text-slate-500 hover:text-red-400 transition rounded-lg hover:bg-slate-800"
+                                        title="Delete event"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                            );
+                        })
                     ) : (
                         <div className="flex-1 flex flex-col items-center justify-center p-8 border border-dashed border-slate-800 rounded-xl text-center">
                             <div className="p-3 rounded-full bg-slate-800/50 text-slate-500 mb-3">

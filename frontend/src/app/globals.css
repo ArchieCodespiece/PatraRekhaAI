@@ -9,7 +9,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-heading);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -48,105 +48,110 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Map legacy Tailwind colour utilities used in the UI to the warm brand palette. */
+@theme {
+  --color-slate-950: #FFFBF0;
+  --color-slate-900: #FFEAD5;
+  --color-slate-800: #CABDB2;
+  --color-slate-700: #CABDB2;
+  --color-slate-600: #413632;
+  --color-slate-500: #413632;
+  --color-slate-400: #413632;
+  --color-slate-300: #413632;
+  --color-slate-200: #413632;
+  --color-slate-100: #413632;
+  --color-blue-950: #FFEAD5;
+  --color-blue-800: #CA8A78;
+  --color-blue-600: #CA8A78;
+  --color-blue-500: #CA8A78;
+  --color-blue-400: #CA8A78;
+  --color-blue-300: #CA8A78;
+  --color-amber-500: #CA8A78;
+  --color-amber-400: #413632;
+  --color-yellow-500: #CA8A78;
+  --color-yellow-400: #413632;
+  --color-green-400: #CA8A78;
+  --color-red-500: #CA8A78;
+  --color-red-400: #413632;
+  --color-rose-400: #CA8A78;
+}
+
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Fonts */
+  --font-sans: "Google Sans", "Anthropic Sans", Arial, sans-serif;
+  --font-heading: "Anthropic Serif", "Anthropic Sheriff", Georgia, serif;
+
+  /* Colors based on user hexes:
+     Primary Background: #FFFBF0 (Soft Alabaster White)
+     Secondary/Card Background: #FFEAD5 (Peach Cream)
+     Primary Brand/Accent: #CA8A78 (Muted Coral/Rose)
+     Primary Text/Foreground: #413632 (Dark Espresso Brown)
+     Borders/Muted Elements: #CABDB2 (Soft Warm Gray/Clay)
+  */
+  --background: #FFFBF0;
+  --foreground: #413632;
+  --card: #FFEAD5;
+  --card-foreground: #413632;
+  --popover: #FFFBF0;
+  --popover-foreground: #413632;
+  --primary: #CA8A78;
+  --primary-foreground: #FFFBF0;
+  --secondary: #CABDB2;
+  --secondary-foreground: #413632;
+  --muted: #FFEAD5;
+  --muted-foreground: #413632;
+  --accent: #CA8A78;
+  --accent-foreground: #FFFBF0;
+  --destructive: #CA8A78;
+  --border: #CABDB2;
+  --input: #CABDB2;
+  --ring: #CA8A78;
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #413632;
+  --sidebar-foreground: #FFFBF0;
+  --sidebar-primary: #CA8A78;
+  --sidebar-primary-foreground: #FFFBF0;
+  --sidebar-accent: #CA8A78;
+  --sidebar-accent-foreground: #FFFBF0;
+  --sidebar-border: #CABDB2;
+  --sidebar-ring: #CA8A78;
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-}
-
+/* Ensure default styles are fully themed with our new premium warm palette */
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    border-color: var(--border);
+    outline-color: var(--ring);
   }
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
   }
-  html {
-    @apply font-sans;
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    font-weight: 600;
   }
 }
 
-/* DayPicker Dropdown Custom Styling */
+/* Custom DayPicker overrides for our new warm palette */
 .rdp-dropdown_root {
   position: relative;
   display: inline-flex;
   align-items: center;
-  background-color: #1e293b;
-  border: 1px solid #334155;
+  background-color: #FFEAD5;
+  border: 1px solid #CABDB2;
   border-radius: 0.5rem;
   padding: 0.2rem 0.5rem;
-  color: #f1f5f9;
+  color: #413632;
 }
 
 .rdp-dropdown {
   appearance: auto !important;
   opacity: 1 !important;
   position: static !important;
-  background-color: #1e293b !important;
-  color: #f1f5f9 !important;
+  background-color: #FFEAD5 !important;
+  color: #413632 !important;
   border: none !important;
   font-size: 0.875rem !important;
   font-weight: 600 !important;
@@ -156,7 +161,7 @@
 }
 
 .rdp-dropdown option {
-  background-color: #0f172a !important;
-  color: #f1f5f9 !important;
+  background-color: #FFFBF0 !important;
+  color: #413632 !important;
   padding: 0.5rem !important;
-}
+}
