@@ -6,7 +6,7 @@ Builds semantic sections from a Document.
 
 import re
 
-from models import Document, Section
+from .models import Document, Section
 
 
 class SemanticBuilder:

@@ -22,19 +22,15 @@ Final Chunks
 import json
 from pathlib import Path
 
-from models import Document, Page, Table
-from semantic import SemanticBuilder
-from splitter import ChunkSplitter
-from metadata import MetadataBuilder
+from .chunking import ChunkingPipeline
+from .models import Document, Page, Table
 
 
 class ChunkPipeline:
     """End-to-end document chunking pipeline."""
 
     def __init__(self):
-        self.semantic = SemanticBuilder()
-        self.splitter = ChunkSplitter()
-        self.metadata = MetadataBuilder()
+        self.chunking = ChunkingPipeline()
 
     def process(
         self,
@@ -45,17 +41,7 @@ class ChunkPipeline:
 
         document = self._load_document(json_path)
 
-        sections = self.semantic.build(document)
-
-        chunks = self.splitter.split(sections)
-
-        chunks = self.metadata.attach(
-            chunks=chunks,
-            document=document,
-            **metadata,
-        )
-
-        return chunks
+        return self.chunking.process(document)
 
     @staticmethod
     def _load_document(json_path: str | Path) -> Document:
@@ -69,7 +55,11 @@ class ChunkPipeline:
         for page in raw:
 
             tables = [
-                Table(rows=t.get("rows", []))
+                Table(
+                    rows=t.get("rows", []),
+                    caption=t.get("caption", ""),
+                    page_number=page["page_number"],
+                )
                 for t in page.get("tables", [])
             ]
 
