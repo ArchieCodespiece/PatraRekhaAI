@@ -5,13 +5,22 @@ import pdfplumber
 import numpy as np
 from pdf2image import convert_from_path
 
-from config import POPPLER_PATH, DPI, BATCH_SIZE, CHECKPOINT
-from preprocess import preprocess_image
-from ocr_engine import run_paddle_ocr
-from table_extraction import extract_tables_from_page
-from text_cleaner import clean_text
-from checkpoint import load_checkpoint, save_checkpoint
-from utils import contiguous_ranges, write_output
+try:
+    from .config import POPPLER_PATH, DPI, BATCH_SIZE, CHECKPOINT
+    from .preprocess import preprocess_image
+    from .ocr_engine import run_paddle_ocr
+    from .table_extraction import extract_tables_from_page
+    from .text_cleaner import clean_text
+    from .checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
+    from .utils import contiguous_ranges, write_output
+except ImportError:
+    from config import POPPLER_PATH, DPI, BATCH_SIZE, CHECKPOINT
+    from preprocess import preprocess_image
+    from ocr_engine import run_paddle_ocr
+    from table_extraction import extract_tables_from_page
+    from text_cleaner import clean_text
+    from checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
+    from utils import contiguous_ranges, write_output
 
 
 def process_pdf(
@@ -88,6 +97,7 @@ def process_pdf(
 
     if not needs_ocr:
         write_output(results, output_json, total_pages)
+        clear_checkpoint(checkpoint_path)
         return
 
     # -------------------------
@@ -161,3 +171,4 @@ def process_pdf(
     # -------------------------
 
     write_output(results, output_json, total_pages)
+    clear_checkpoint(checkpoint_path)

@@ -12,7 +12,7 @@ import os
 # ==========================================================
 
 # Poppler installation path (required by pdf2image on Windows)
-POPPLER_PATH = r"D:\OCR\poppler-25.12.0\Library\bin"
+POPPLER_PATH = r"/usr/bin"
 
 # ==========================================================
 # OCR SETTINGS

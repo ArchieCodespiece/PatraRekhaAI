@@ -1,0 +1,52 @@
+Problem Statement
+PatraRekhaAI is for handling the heavy document flow of an organization like KMRL: emails, PDFs, tenders, reports, policies, invoices, and other files arrive from many sources. The goal is to ingest these documents, preserve access to the original files, and later build summaries/viewers/search/routing on top of them.
+Implemented So Far
+Email ingestion exists in:
+backend/email-ingestion/ingest.py
+It polls an IMAP inbox, reads unread emails, extracts attachments, and uploads each attachment to Supabase Storage bucket:
+file_storage
+For each uploaded attachment, it inserts a row into Supabase table:
+public.files
+Current expected table fields include:
+file_id
+filename
+file_url
+file_type
+file_size
+created_at
+uploaded_at
+Supabase DB/storage helpers were created in:
+backend/db/supabase_client.py
+backend/db/files.py
+backend/db/files.py contains wrappers for:
+store_file()
+list_documents()
+get_document_file_url()
+A FastAPI backend was added in:
+backend/main.py
+It exposes:
+GET /get-documents
+Returns all document rows.
+GET /get-documents/{file_id}
+Returns the selected document’s file_url, intended for a future frontend viewer when a user clicks a document icon.
+Environment
+.env now lives at:
+backend/.env
+It should contain:
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_FILE_STORAGE_BUCKET=file_storage
+SUPABASE_FILES_TABLE=files
+IMAP_HOST=...
+IMAP_USER=...
+IMAP_PASSWORD=...
+Run Commands
+Email ingestion:
+cd backend/email-ingestion
+./.venv/bin/python ingest.py
+FastAPI server:
+cd backend
+.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8010
+Current verified API URL:
+http://127.0.0.1:8010
+Both /get-documents and /get-documents/{file_id} were tested successfully against live Supabase rows.
