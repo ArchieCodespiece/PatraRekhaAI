@@ -20,7 +20,7 @@ const links = [
     },
     {
         title: "Documents",
-        href: "/documents",
+        href: "/document",
         icon: FileText,
     },
     {

@@ -20,59 +20,76 @@ import {
 } from "lucide-react";
 
 const MAX_SELECTION = 5;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8001";
 
-// Mock PDF documents using the document names you provided for verification.
-const MOCK_PDFS = [
-    {
-        id: "1",
-        name: "5aa423f9-9482-4837-853a-652b0e5e0a47-7a7f7b0b8a4d-QUESTION-BANK_2025_BASIC_ELECTRICAL_ENGINEERING_RCC-ES-EE201",
-        size: "2.4 MB",
-        pages: 18,
-        uploaded: "Jul 20, 2026",
-    },
-    {
-        id: "2",
-        name: "EJ1172284",
-        size: "5.1 MB",
-        pages: 42,
-        uploaded: "Jul 18, 2026",
-    },
-    {
-        id: "3",
-        name: "Sample_Vehicle_Pollution_Report",
-        size: "3.8 MB",
-        pages: 67,
-        uploaded: "Jul 15, 2026",
-    },
-    {
-        id: "4",
-        name: "Quarterly_Financial_Report_Q2",
-        size: "1.9 MB",
-        pages: 22,
-        uploaded: "Jul 10, 2026",
-    },
-    {
-        id: "5",
-        name: "Mock_Document_5.pdf",
-        size: "4.2 MB",
-        pages: 35,
-        uploaded: "Jul 8, 2026",
-    },
-];
+function cleanFilename(filename) {
+    return (filename || "Untitled.pdf").replace(/^\w{12}-/, "");
+}
+
+function filenameStem(filename) {
+    return cleanFilename(filename).replace(/\.pdf$/i, "");
+}
+
+function formatBytes(bytes) {
+    const size = Number(bytes || 0);
+    if (!size) return "Unknown size";
+
+    const units = ["B", "KB", "MB", "GB"];
+    const index = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
+    return `${(size / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function formatDate(value) {
+    if (!value) return "Unknown date";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Unknown date";
+    return date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+    });
+}
+
+function normalizeDocument(document) {
+    const name = filenameStem(document.filename);
+
+    return {
+        id: String(document.file_id),
+        name,
+        label: document.file_heading || name,
+        filename: cleanFilename(document.filename),
+        size: formatBytes(document.file_size),
+        uploaded: formatDate(document.uploaded_at || document.created_at),
+    };
+}
+
+async function fetchChatDocuments() {
+    const response = await fetch(`${API_BASE_URL}/get-documents`);
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data?.detail || "Unable to load documents.");
+    }
+
+    return Array.isArray(data.documents) ? data.documents.map(normalizeDocument) : [];
+}
 
 export default function ChatWithPDF() {
     const [selectedPDFs, setSelectedPDFs] = useState(new Set());
     const [messages, setMessages] = useState([]);
     const [inputValue, setInputValue] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [isDocumentsLoading, setIsDocumentsLoading] = useState(true);
+    const [documentsError, setDocumentsError] = useState("");
+    const [documents, setDocuments] = useState([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [isPanelOpen, setIsPanelOpen] = useState(true);
 
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
 
-    const filteredPDFs = MOCK_PDFS.filter((pdf) =>
-        pdf.name.toLowerCase().includes(searchQuery.toLowerCase())
+    const filteredPDFs = documents.filter((pdf) =>
+        `${pdf.label} ${pdf.name} ${pdf.filename}`.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const togglePDF = (id) => {
@@ -93,10 +110,13 @@ export default function ChatWithPDF() {
     };
 
     const toggleAllPDFs = () => {
-        if (selectedPDFs.size === MOCK_PDFS.length) {
+        const selectableIds = documents.slice(0, MAX_SELECTION).map((pdf) => pdf.id);
+        const selectedSelectableCount = selectableIds.filter((id) => selectedPDFs.has(id)).length;
+
+        if (selectedSelectableCount === selectableIds.length) {
             setSelectedPDFs(new Set());
         } else {
-            setSelectedPDFs(new Set(MOCK_PDFS.map((p) => p.id)));
+            setSelectedPDFs(new Set(selectableIds));
         }
     };
 
@@ -107,6 +127,31 @@ export default function ChatWithPDF() {
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
+
+    useEffect(() => {
+        let isActive = true;
+
+        fetchChatDocuments()
+            .then((nextDocuments) => {
+                if (isActive) {
+                    setDocuments(nextDocuments);
+                }
+            })
+            .catch((error) => {
+                if (isActive) {
+                    setDocumentsError(error.message || "Unable to load documents.");
+                }
+            })
+            .finally(() => {
+                if (isActive) {
+                    setIsDocumentsLoading(false);
+                }
+            });
+
+        return () => {
+            isActive = false;
+        };
+    }, []);
 
     const handleSend = async (e) => {
         e?.preventDefault();
@@ -125,10 +170,10 @@ export default function ChatWithPDF() {
 
         try {
             const selectedDocumentNames = [...selectedPDFs]
-                .map((id) => MOCK_PDFS.find((pdf) => pdf.id === id)?.name)
+                .map((id) => documents.find((pdf) => pdf.id === id)?.name)
                 .filter(Boolean);
 
-            const response = await fetch("http://127.0.0.1:8001/chat", {
+            const response = await fetch(`${API_BASE_URL}/chat`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -220,14 +265,14 @@ export default function ChatWithPDF() {
                     {canChat && (
                         <div className="flex flex-wrap items-center gap-1.5 pl-12">
                             {[...selectedPDFs].slice(0, 4).map((id) => {
-                                const pdf = MOCK_PDFS.find((p) => p.id === id);
+                                const pdf = documents.find((p) => p.id === id);
                                 return (
                                     <span
                                         key={id}
                                         className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-blue-950/60 border border-blue-800/40 text-blue-400 text-[10px] font-medium max-w-[140px] truncate"
                                     >
                                         <FileText size={9} className="shrink-0" />
-                                        <span className="truncate">{pdf?.name.replace(".pdf", "")}</span>
+                                        <span className="truncate">{pdf?.label || pdf?.name}</span>
                                     </span>
                                 );
                             })}
@@ -421,7 +466,11 @@ export default function ChatWithPDF() {
                             onClick={toggleAllPDFs}
                             className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
                         >
-                            {selectedCount === MOCK_PDFS.length ? "Deselect All" : "Select All"}
+                            {selectedPDFs.size > 0
+                                ? "Deselect All"
+                                : documents.length > MAX_SELECTION
+                                    ? `Select ${MAX_SELECTION}`
+                                    : "Select All"}
                         </button>
                     </div>
 
@@ -449,12 +498,22 @@ export default function ChatWithPDF() {
 
                     {/* PDF List */}
                     <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
-                        {filteredPDFs.length > 0 ? (
+                        {isDocumentsLoading ? (
+                            <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-500">
+                                <Loader2 size={14} className="animate-spin text-blue-400" />
+                                Loading documents...
+                            </div>
+                        ) : documentsError ? (
+                            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                                <AlertCircle size={20} className="text-amber-400" />
+                                <p className="text-xs text-slate-500">{documentsError}</p>
+                            </div>
+                        ) : filteredPDFs.length > 0 ? (
                             filteredPDFs.map((pdf) => {
                                 const isSelected = selectedPDFs.has(pdf.id);
-                                        const isAtLimit = !isSelected && selectedPDFs.size >= MAX_SELECTION;
+                                const isAtLimit = !isSelected && selectedPDFs.size >= MAX_SELECTION;
 
-                                        return (
+                                return (
                                     <button
                                         key={pdf.id}
                                         onClick={() => togglePDF(pdf.id)}
@@ -482,12 +541,12 @@ export default function ChatWithPDF() {
                                         {/* Info */}
                                         <div className="min-w-0 flex-1">
                                             <p className={`text-xs font-medium leading-snug truncate transition ${isSelected ? "text-blue-300" : "text-slate-300 group-hover:text-slate-200"}`}>
-                                                {pdf.name}
+                                                {pdf.label}
                                             </p>
                                             <div className="flex items-center gap-2 mt-1">
                                                 <span className="text-[10px] text-slate-600">{pdf.size}</span>
                                                 <span className="text-[10px] text-slate-700">·</span>
-                                                <span className="text-[10px] text-slate-600">{pdf.pages} pages</span>
+                                                <span className="text-[10px] text-slate-600 truncate">{pdf.filename}</span>
                                             </div>
                                             <p className="text-[10px] text-slate-700 mt-0.5">{pdf.uploaded}</p>
                                         </div>
