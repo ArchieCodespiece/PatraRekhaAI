@@ -38,6 +38,7 @@ def process_pdf_metadata(pdf_path: str | Path, file_id: str) -> dict[str, Any]:
     # Imported inside the function so this pipeline can be tested without the
     # backend package on sys.path.
     from db.document_metadata import upsert_document_metadata
+    from db.files import mark_file_summarized
 
     upsert_document_metadata(
         file_id=file_id,
@@ -45,6 +46,7 @@ def process_pdf_metadata(pdf_path: str | Path, file_id: str) -> dict[str, Any]:
         summarization=metadata["summarization"],
         timeline_json=metadata["timeline_json"],
     )
+    mark_file_summarized(file_id)
 
     return metadata
 
