@@ -7,6 +7,7 @@ import os
 import re
 import signal
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from email import policy
@@ -14,8 +15,12 @@ from email.parser import BytesParser
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = BACKEND_DIR.parent
+SUMMARIZATION_PIPELINE_DIR = PROJECT_ROOT / "AI pipeline" / "summarization-deadline"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
+if str(SUMMARIZATION_PIPELINE_DIR) not in sys.path:
+    sys.path.insert(0, str(SUMMARIZATION_PIPELINE_DIR))
 
 from dotenv import load_dotenv
 
@@ -26,6 +31,7 @@ from db.files import store_file
 
 
 STOP = False
+_summarization_pipeline = None
 
 
 def env_int(name, default):
@@ -89,6 +95,33 @@ def message_id_for(message, raw_message):
     return message.get("Message-ID") or hashlib.sha256(raw_message).hexdigest()
 
 
+def load_summarization_pipeline():
+    global _summarization_pipeline
+
+    if _summarization_pipeline is None:
+        from pipeline import process_pdf_metadata
+
+        _summarization_pipeline = process_pdf_metadata
+
+    return _summarization_pipeline
+
+
+def is_pdf_attachment(filename, content_type):
+    return filename.lower().endswith(".pdf") or content_type == "application/pdf"
+
+
+def process_metadata_for_attachment(file_record, filename, content):
+    if not file_record or not file_record.get("file_id"):
+        return
+
+    with tempfile.TemporaryDirectory(prefix="patrarekha-metadata-") as temp_dir:
+        pdf_path = Path(temp_dir) / filename
+        pdf_path.write_bytes(content)
+
+        process_pdf_metadata = load_summarization_pipeline()
+        process_pdf_metadata(pdf_path=pdf_path, file_id=str(file_record["file_id"]))
+
+
 def store_message(message, raw_message, state, uid):
     message_id = message_id_for(message, raw_message)
     if message_id in state["message_ids"]:
@@ -111,8 +144,16 @@ def store_message(message, raw_message, state, uid):
 
         content_hash = hashlib.sha256(content).hexdigest()
         original_name = attachment.get_filename() or f"attachment-{index}"
+        content_type = attachment.get_content_type()
         stored_name = f"{content_hash[:12]}-{safe_filename(original_name, f'attachment-{index}')}"
-        store_file(stored_name, content, attachment.get_content_type())
+        file_record = store_file(stored_name, content, content_type)
+
+        if is_pdf_attachment(stored_name, content_type):
+            try:
+                process_metadata_for_attachment(file_record, stored_name, content)
+            except Exception as error:
+                print(f"Metadata extraction failed for {stored_name}: {error}")
+
         attachments.append(stored_name)
 
     state["message_ids"].append(message_id)

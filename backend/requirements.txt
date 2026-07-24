@@ -3,3 +3,4 @@ supabase
 fastapi
 uvicorn
 groq
+pdfplumber
