@@ -21,7 +21,8 @@ AI_PIPELINE_DIR = REPO_ROOT / "AI pipeline"
 if str(AI_PIPELINE_DIR) not in sys.path:
     sys.path.insert(0, str(AI_PIPELINE_DIR))
 
-from db.files import get_document_file_url, list_documents
+from db.document_metadata import list_document_metadata_by_file_ids
+from db.files import get_document_file_url, list_documents, list_ready_documents
 from embedding.embedder import GeminiEmbedder
 from vectorstore.retrieval import get_chunks_from_documents
 from webhooks.router import router as webhooks_router
@@ -176,7 +177,31 @@ def resolve_pinecone_document_names(selected_documents: List[str]) -> List[str]:
 
 @app.get("/get-documents")
 def get_documents():
-    return {"documents": list_documents()}
+    documents = list_ready_documents()
+    file_ids = [str(document["file_id"]) for document in documents if document.get("file_id")]
+    metadata_rows = list_document_metadata_by_file_ids(file_ids)
+    metadata_by_file_id = {
+        str(metadata["file_id"]): metadata
+        for metadata in metadata_rows
+        if metadata.get("file_id")
+    }
+
+    enriched_documents = []
+    for document in documents:
+        file_id = str(document.get("file_id") or "")
+        metadata = metadata_by_file_id.get(file_id, {})
+        enriched_documents.append(
+            {
+                **document,
+                "file_heading": metadata.get("file_heading"),
+                "summarization": metadata.get("summarization"),
+                "timeline_json": metadata.get("timeline_json"),
+                "metadata_created_at": metadata.get("created_at"),
+                "metadata_updated_at": metadata.get("updated_at"),
+            }
+        )
+
+    return {"documents": enriched_documents}
 
 
 @app.get("/get-documents/{file_id}")

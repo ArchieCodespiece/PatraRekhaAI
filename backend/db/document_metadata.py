@@ -9,6 +9,9 @@ from db.supabase_client import supabase
 
 
 DOCUMENT_METADATA_TABLE = "document_metadata"
+DOCUMENT_METADATA_SELECT_COLUMNS = (
+    "file_id,file_heading,summarization,timeline_json,created_at,updated_at"
+)
 
 
 def upsert_document_metadata(
@@ -39,3 +42,20 @@ def upsert_document_metadata(
     )
 
     return response.data[0] if response.data else None
+
+
+def list_document_metadata_by_file_ids(file_ids: list[str]):
+    if not file_ids:
+        return []
+
+    for file_id in file_ids:
+        UUID(str(file_id))
+
+    response = (
+        supabase.table(DOCUMENT_METADATA_TABLE)
+        .select(DOCUMENT_METADATA_SELECT_COLUMNS)
+        .in_("file_id", [str(file_id) for file_id in file_ids])
+        .execute()
+    )
+
+    return response.data

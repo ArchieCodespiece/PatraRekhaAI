@@ -64,6 +64,18 @@ def list_documents():
     return response.data
 
 
+def list_ready_documents():
+    response = (
+        supabase.table(FILES_TABLE)
+        .select(FILE_SELECT_COLUMNS)
+        .eq("is_summarized", True)
+        .eq("is_vectored", True)
+        .order("uploaded_at", desc=True)
+        .execute()
+    )
+    return response.data
+
+
 def get_document(file_id):
     UUID(str(file_id))
     response = (

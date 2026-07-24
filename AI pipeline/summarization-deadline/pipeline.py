@@ -95,7 +95,7 @@ def extract_metadata_with_llm(document_text: str) -> dict[str, Any]:
                 "content": (
                     "Extract document metadata. Return only valid JSON with keys: "
                     "file_heading string, summarization string, timeline_json array. "
-                    "timeline_json items must be objects with date and event strings. "
+                    "timeline_json items must be objects with date and event strings convert date into dd/mm/yyyy format. "
                     "Use null or an empty array when information is missing."
                 ),
             },
