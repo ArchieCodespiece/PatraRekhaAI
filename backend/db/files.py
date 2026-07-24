@@ -58,13 +58,18 @@ def list_documents():
     return response.data
 
 
-def get_document_file_url(file_id):
+def get_document(file_id):
     UUID(str(file_id))
     response = (
         supabase.table(FILES_TABLE)
-        .select("file_url")
+        .select("file_id,filename,file_type,file_size,file_url,created_at,uploaded_at")
         .eq("file_id", str(file_id))
         .limit(1)
         .execute()
     )
-    return response.data[0]["file_url"] if response.data else None
+    return response.data[0] if response.data else None
+
+
+def get_document_file_url(file_id):
+    document = get_document(file_id)
+    return document["file_url"] if document else None

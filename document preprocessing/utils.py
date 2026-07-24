@@ -21,7 +21,10 @@ def contiguous_ranges(page_nums):
 
 def write_output(results, output_json, total_pages):
     """Sort and write the final JSON output."""
-    entries = [results[pn] for pn in sorted(results.keys())]
+    entries = [
+        results[pn]
+        for pn in sorted(results.keys(), key=lambda page_number: int(page_number))
+    ]
     with open(output_json, "w", encoding="utf-8") as f:
         json.dump(entries, f, indent=4, ensure_ascii=False)
     print(f"\n✅ Done. {len(entries)}/{total_pages} pages written to '{output_json}'.")

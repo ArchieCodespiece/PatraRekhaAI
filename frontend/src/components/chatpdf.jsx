@@ -19,24 +19,45 @@ import {
     Upload,
 } from "lucide-react";
 
-// Mock PDF documents
-const MOCK_PDFS = [
-    { id: "1", name: "PatraRekha_Project_Proposal.pdf", size: "2.4 MB", pages: 18, uploaded: "Jul 20, 2026" },
-    { id: "2", name: "Q2_Financial_Report_2026.pdf", size: "5.1 MB", pages: 42, uploaded: "Jul 18, 2026" },
-    { id: "3", name: "KMRL_Technical_Specification.pdf", size: "3.8 MB", pages: 67, uploaded: "Jul 15, 2026" },
-    { id: "4", name: "AI_Research_Paper_v2.pdf", size: "1.9 MB", pages: 22, uploaded: "Jul 10, 2026" },
-    { id: "5", name: "User_Requirements_Document.pdf", size: "4.2 MB", pages: 35, uploaded: "Jul 8, 2026" },
-    { id: "6", name: "Infrastructure_Audit_2026.pdf", size: "6.7 MB", pages: 89, uploaded: "Jul 5, 2026" },
-    { id: "7", name: "Meeting_Notes_July_Sprint.pdf", size: "0.8 MB", pages: 5, uploaded: "Jul 3, 2026" },
-];
+const MAX_SELECTION = 5;
 
-// Simulated AI responses
-const AI_RESPONSES = [
-    "Based on the selected documents, I found relevant information regarding your query. The documents indicate that the project timeline spans across Q3 and Q4 of 2026, with key milestones outlined in the proposal.",
-    "According to the financial report, the total budget allocation for Phase 1 is ₹12.4 crore, with a projected ROI of 22% by end of FY2026.",
-    "The technical specification document mentions that the system supports REST API integration, with rate limits set at 500 requests/minute per tenant.",
-    "From the user requirements document, the top priority features requested include document search, AI summarization, and multi-user collaboration.",
-    "I've analyzed all selected documents and identified 3 common themes: (1) Digital transformation, (2) AI integration, and (3) Scalable infrastructure.",
+// Mock PDF documents using the document names you provided for verification.
+const MOCK_PDFS = [
+    {
+        id: "1",
+        name: "5aa423f9-9482-4837-853a-652b0e5e0a47-7a7f7b0b8a4d-QUESTION-BANK_2025_BASIC_ELECTRICAL_ENGINEERING_RCC-ES-EE201",
+        size: "2.4 MB",
+        pages: 18,
+        uploaded: "Jul 20, 2026",
+    },
+    {
+        id: "2",
+        name: "EJ1172284",
+        size: "5.1 MB",
+        pages: 42,
+        uploaded: "Jul 18, 2026",
+    },
+    {
+        id: "3",
+        name: "Sample_Vehicle_Pollution_Report",
+        size: "3.8 MB",
+        pages: 67,
+        uploaded: "Jul 15, 2026",
+    },
+    {
+        id: "4",
+        name: "Quarterly_Financial_Report_Q2",
+        size: "1.9 MB",
+        pages: 22,
+        uploaded: "Jul 10, 2026",
+    },
+    {
+        id: "5",
+        name: "Mock_Document_5.pdf",
+        size: "4.2 MB",
+        pages: 35,
+        uploaded: "Jul 8, 2026",
+    },
 ];
 
 export default function ChatWithPDF() {
@@ -57,8 +78,16 @@ export default function ChatWithPDF() {
     const togglePDF = (id) => {
         setSelectedPDFs((prev) => {
             const next = new Set(prev);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
+            if (next.has(id)) {
+                next.delete(id);
+                return next;
+            }
+
+            if (next.size >= MAX_SELECTION) {
+                return prev;
+            }
+
+            next.add(id);
             return next;
         });
     };
@@ -94,21 +123,52 @@ export default function ChatWithPDF() {
         setInputValue("");
         setIsLoading(true);
 
-        // Simulate AI response delay
-        await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800));
+        try {
+            const selectedDocumentNames = [...selectedPDFs]
+                .map((id) => MOCK_PDFS.find((pdf) => pdf.id === id)?.name)
+                .filter(Boolean);
 
-        const aiMsg = {
-            id: Date.now() + 1,
-            role: "assistant",
-            content: AI_RESPONSES[Math.floor(Math.random() * AI_RESPONSES.length)],
-            timestamp: new Date(),
-            sources: [...selectedPDFs].slice(0, 2).map(
-                (id) => MOCK_PDFS.find((p) => p.id === id)?.name
-            ),
-        };
-        setMessages((prev) => [...prev, aiMsg]);
-        setIsLoading(false);
-        inputRef.current?.focus();
+            const response = await fetch("http://127.0.0.1:8001/chat", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    query: text,
+                    selected_documents: selectedDocumentNames,
+                }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data?.detail || "Unable to get a response from the server.");
+            }
+
+            const aiMsg = {
+                id: Date.now() + 1,
+                role: "assistant",
+                content: data.answer || "I couldn't generate a response.",
+                timestamp: new Date(),
+                sources: (data.matches || [])
+                    .map((match) => match?.metadata?.document_name)
+                    .filter(Boolean),
+            };
+
+            setMessages((prev) => [...prev, aiMsg]);
+        } catch (error) {
+            const aiMsg = {
+                id: Date.now() + 1,
+                role: "assistant",
+                content: error.message || "Something went wrong while contacting the API.",
+                timestamp: new Date(),
+                sources: [],
+            };
+            setMessages((prev) => [...prev, aiMsg]);
+        } finally {
+            setIsLoading(false);
+            inputRef.current?.focus();
+        }
     };
 
     const handleKeyDown = (e) => {
@@ -261,15 +321,18 @@ export default function ChatWithPDF() {
                                         {msg.sources && (
                                             <div className="flex flex-wrap gap-1 mt-1">
                                                 <span className="text-[10px] text-slate-600">Sources:</span>
-                                                {msg.sources.filter(Boolean).map((src) => (
-                                                    <span
-                                                        key={src}
-                                                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700"
-                                                    >
-                                                        <FileText size={9} />
-                                                        {src?.replace(".pdf", "")}
-                                                    </span>
-                                                ))}
+                                                {msg.sources
+                                                    .filter(Boolean)
+                                                    .filter((src, index, arr) => arr.indexOf(src) === index)
+                                                    .map((src) => (
+                                                        <span
+                                                            key={`${msg.id}-${src}`}
+                                                            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700"
+                                                        >
+                                                            <FileText size={9} />
+                                                            {src?.replace(".pdf", "")}
+                                                        </span>
+                                                    ))}
                                             </div>
                                         )}
                                         <span className="text-[10px] text-slate-600">
@@ -351,7 +414,7 @@ export default function ChatWithPDF() {
                         <div>
                             <h3 className="text-sm font-bold text-foreground">Your Documents</h3>
                             <p className="text-[11px] text-slate-500 mt-0.5">
-                                {selectedCount} / {MOCK_PDFS.length} selected
+                                {selectedCount} / {MAX_SELECTION} selected
                             </p>
                         </div>
                         <button
@@ -389,15 +452,18 @@ export default function ChatWithPDF() {
                         {filteredPDFs.length > 0 ? (
                             filteredPDFs.map((pdf) => {
                                 const isSelected = selectedPDFs.has(pdf.id);
-                                return (
+                                        const isAtLimit = !isSelected && selectedPDFs.size >= MAX_SELECTION;
+
+                                        return (
                                     <button
                                         key={pdf.id}
                                         onClick={() => togglePDF(pdf.id)}
+                                        disabled={isAtLimit}
                                         className={`w-full flex items-start gap-3 p-3 rounded-xl text-left border transition-all group ${
                                             isSelected
                                                 ? "bg-blue-600/10 border-blue-500/40 shadow-sm"
                                                 : "bg-slate-800/30 border-slate-800/60 hover:border-slate-700 hover:bg-slate-800/60"
-                                        }`}
+                                        } ${isAtLimit ? "opacity-60 cursor-not-allowed" : ""}`}
                                     >
                                         {/* Checkbox */}
                                         <div className={`shrink-0 mt-0.5 transition ${isSelected ? "text-blue-400" : "text-slate-600 group-hover:text-slate-400"}`}>

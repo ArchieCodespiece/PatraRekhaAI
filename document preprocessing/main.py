@@ -1,8 +1,13 @@
 from pathlib import Path
 
-from pdf_processor import process_pdf
-from document_metadata import generate_document_metadata
-from config import BATCH_SIZE, DPI
+try:
+    from .pdf_processor import process_pdf
+    from .document_metadata import generate_document_metadata
+    from .config import BATCH_SIZE, DPI
+except ImportError:
+    from pdf_processor import process_pdf
+    from document_metadata import generate_document_metadata
+    from config import BATCH_SIZE, DPI
 
 
 if __name__ == "__main__":

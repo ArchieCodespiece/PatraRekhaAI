@@ -2,8 +2,12 @@
 
 from paddleocr import PaddleOCR
 
-from config import OCR_LANGUAGE, MIN_OCR_CONFIDENCE
-from table_extraction import reconstruct_tables_from_boxes
+try:
+    from .config import OCR_LANGUAGE, MIN_OCR_CONFIDENCE
+    from .table_extraction import reconstruct_tables_from_boxes
+except ImportError:
+    from config import OCR_LANGUAGE, MIN_OCR_CONFIDENCE
+    from table_extraction import reconstruct_tables_from_boxes
 
 # ----------------------------------------------------
 # Lazy Singleton OCR Instance

@@ -16,11 +16,13 @@ Single-entrypoint pipeline that processes a PDF end-to-end:
 Usage
 -----
     python main.py <path-to-pdf>
+    python main.py <path-to-pdf> --cleanup-input
     python main.py                     # uses the default sample PDF
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 import time
 from pathlib import Path
@@ -67,13 +69,11 @@ from vectorstore.pipeline import VectorStorePipeline  # noqa: E402
 
 # ── Default sample PDF ──────────────────────────────────────────────
 DEFAULT_PDF = (
-    ROOT
-    / "ingestion"
-    / "EJ1172284.pdf"
+    Path("/home/user/Projects/PatraRekha/PatraRekhaAI/high-school-research-paper-example.pdf")
 )
 
 
-def run_pipeline(pdf_path: str | Path) -> None:
+def run_pipeline(pdf_path: str | Path, cleanup_input: bool = False) -> None:
     """
     Execute the full ingestion pipeline for a single PDF.
 
@@ -81,9 +81,13 @@ def run_pipeline(pdf_path: str | Path) -> None:
     ----------
     pdf_path : str | Path
         Absolute or relative path to the input PDF file.
+    cleanup_input : bool
+        Delete the input PDF and generated sidecar JSON after the pipeline ends.
+        Use this for temporary webhook downloads, not for normal CLI files.
     """
 
     pdf_path = Path(pdf_path).resolve()
+    json_path = None
 
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
@@ -91,92 +95,117 @@ def run_pipeline(pdf_path: str | Path) -> None:
     if pdf_path.suffix.lower() != ".pdf":
         raise ValueError(f"Expected a .pdf file, got: {pdf_path.suffix}")
 
-    print("=" * 65)
-    print("  PatraRekha — Document Ingestion Pipeline")
-    print("=" * 65)
-    print(f"\n  Input : {pdf_path}\n")
+    try:
+        print("=" * 65)
+        print("  PatraRekha — Document Ingestion Pipeline")
+        print("=" * 65)
+        print(f"\n  Input : {pdf_path}\n")
 
-    # ── Stage 1: Document Preprocessing (OCR → JSON) ────────────────
-    print("─" * 65)
-    print("  Stage 1 / 4 : Document Preprocessing (OCR)")
-    print("─" * 65)
+        # ── Stage 1: Document Preprocessing (OCR → JSON) ────────────────
+        print("─" * 65)
+        print("  Stage 1 / 4 : Document Preprocessing (OCR)")
+        print("─" * 65)
 
-    t0 = time.perf_counter()
+        t0 = time.perf_counter()
 
-    json_path = preprocess_document(str(pdf_path))
+        json_path = Path(preprocess_document(str(pdf_path))).resolve()
 
-    t1 = time.perf_counter()
-    print(f"  ✓ JSON output : {json_path}")
-    print(f"  ✓ Completed in {t1 - t0:.1f}s\n")
+        t1 = time.perf_counter()
+        print(f"  ✓ JSON output : {json_path}")
+        print(f"  ✓ Completed in {t1 - t0:.1f}s\n")
 
-    # ── Stage 2: Chunking ────────────────────────────────────────────
-    print("─" * 65)
-    print("  Stage 2 / 4 : Semantic Chunking")
-    print("─" * 65)
+        # ── Stage 2: Chunking ────────────────────────────────────────────
+        print("─" * 65)
+        print("  Stage 2 / 4 : Semantic Chunking")
+        print("─" * 65)
 
-    t0 = time.perf_counter()
+        t0 = time.perf_counter()
 
-    chunk_pipeline = ChunkPipeline()
-    chunks = chunk_pipeline.process(json_path)
+        chunk_pipeline = ChunkPipeline()
+        chunks = chunk_pipeline.process(json_path)
 
-    t1 = time.perf_counter()
-    print(f"  ✓ Chunks created : {len(chunks)}")
-    print(f"  ✓ Completed in {t1 - t0:.1f}s\n")
+        t1 = time.perf_counter()
+        print(f"  ✓ Chunks created : {len(chunks)}")
+        print(f"  ✓ Completed in {t1 - t0:.1f}s\n")
 
-    # ── Stage 3: Embedding ───────────────────────────────────────────
-    print("─" * 65)
-    print("  Stage 3 / 4 : Embedding (Gemini)")
-    print("─" * 65)
+        # ── Stage 3: Embedding ───────────────────────────────────────────
+        print("─" * 65)
+        print("  Stage 3 / 4 : Embedding (Gemini)")
+        print("─" * 65)
 
-    t0 = time.perf_counter()
+        t0 = time.perf_counter()
 
-    embedding_pipeline = EmbeddingPipeline()
-    embedding_result = embedding_pipeline.process(chunks)
+        embedding_pipeline = EmbeddingPipeline()
+        embedding_result = embedding_pipeline.process(chunks)
 
-    t1 = time.perf_counter()
-    print(
-        f"  ✓ Embeddings generated : "
-        f"{len(embedding_result.embedded_chunks)}"
-    )
-    print(f"  ✓ Completed in {t1 - t0:.1f}s\n")
+        t1 = time.perf_counter()
+        print(
+            f"  ✓ Embeddings generated : "
+            f"{len(embedding_result.embedded_chunks)}"
+        )
+        print(f"  ✓ Completed in {t1 - t0:.1f}s\n")
 
-    # ── Stage 4: Vector Store (Pinecone) ─────────────────────────────
-    print("─" * 65)
-    print("  Stage 4 / 4 : Vector Store (Pinecone)")
-    print("─" * 65)
+        # ── Stage 4: Vector Store (Pinecone) ─────────────────────────────
+        print("─" * 65)
+        print("  Stage 4 / 4 : Vector Store (Pinecone)")
+        print("─" * 65)
 
-    t0 = time.perf_counter()
+        t0 = time.perf_counter()
 
-    vectorstore_pipeline = VectorStorePipeline()
-    vectorstore_pipeline.upload(embedding_result)
+        vectorstore_pipeline = VectorStorePipeline()
+        vectorstore_pipeline.upload(embedding_result)
 
-    t1 = time.perf_counter()
-    print(f"  ✓ Upserted to Pinecone")
-    print(f"  ✓ Completed in {t1 - t0:.1f}s\n")
+        t1 = time.perf_counter()
+        print(f"  ✓ Upserted to Pinecone")
+        print(f"  ✓ Completed in {t1 - t0:.1f}s\n")
 
-    # ── Summary ──────────────────────────────────────────────────────
-    stats = vectorstore_pipeline.describe()
+        # ── Summary ──────────────────────────────────────────────────────
+        stats = vectorstore_pipeline.describe()
 
-    print("=" * 65)
-    print("  Pipeline Complete")
-    print("=" * 65)
-    print(f"  Document : {pdf_path.name}")
-    print(f"  Chunks   : {len(chunks)}")
-    print(
-        f"  Embedded : "
-        f"{len(embedding_result.embedded_chunks)}"
-    )
-    print(f"  Index    : {stats}")
-    print("=" * 65)
+        print("=" * 65)
+        print("  Pipeline Complete")
+        print("=" * 65)
+        print(f"  Document : {pdf_path.name}")
+        print(f"  Chunks   : {len(chunks)}")
+        print(
+            f"  Embedded : "
+            f"{len(embedding_result.embedded_chunks)}"
+        )
+        print(f"  Index    : {stats}")
+        print("=" * 65)
+    finally:
+        if cleanup_input:
+            cleanup_pipeline_input(pdf_path, json_path)
+
+
+def cleanup_pipeline_input(pdf_path: Path, json_path: Path | None = None) -> None:
+    """Delete temporary pipeline input files created by webhook processing."""
+    paths = [pdf_path]
+    if json_path:
+        paths.append(json_path)
+
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            print(f"Warning: could not delete temporary file {path}: {exc}")
 
 
 # ── CLI entrypoint ───────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run the PatraRekha document ingestion pipeline.")
+    parser.add_argument(
+        "pdf_path",
+        nargs="?",
+        default=str(DEFAULT_PDF),
+        help="Path to the PDF to process. Uses the sample PDF when omitted.",
+    )
+    parser.add_argument(
+        "--cleanup-input",
+        action="store_true",
+        help="Delete the input PDF and generated sidecar JSON after the pipeline ends.",
+    )
+    args = parser.parse_args()
 
-    if len(sys.argv) > 1:
-        input_pdf = sys.argv[1]
-    else:
-        input_pdf = str(DEFAULT_PDF)
-
-    run_pipeline(input_pdf)
+    run_pipeline(args.pdf_path, cleanup_input=args.cleanup_input)
