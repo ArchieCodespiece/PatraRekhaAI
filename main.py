@@ -67,9 +67,7 @@ from vectorstore.pipeline import VectorStorePipeline  # noqa: E402
 
 # ── Default sample PDF ──────────────────────────────────────────────
 DEFAULT_PDF = (
-    ROOT
-    / "ingestion"
-    / "EJ1172284.pdf"
+    r"E:\PatraRekha\ingestion\TechForward_Summit_Registration.pdf"
 )
 
 
@@ -118,6 +116,9 @@ def run_pipeline(pdf_path: str | Path) -> None:
 
     chunk_pipeline = ChunkPipeline()
     chunks = chunk_pipeline.process(json_path)
+
+    print(f"Chunks returned: {len(chunks)}")
+
 
     t1 = time.perf_counter()
     print(f"  ✓ Chunks created : {len(chunks)}")
