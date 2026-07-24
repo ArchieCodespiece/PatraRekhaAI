@@ -4,6 +4,9 @@ Pinecone vector store implementation.
 
 from __future__ import annotations
 
+import re
+import sys
+from pathlib import Path
 from typing import List
 
 from pinecone import Pinecone, ServerlessSpec
@@ -18,6 +21,24 @@ from .config import (
     PINECONE_REGION,
     UPSERT_BATCH_SIZE,
     VECTOR_DIMENSION,
+)
+
+ROOT = Path(__file__).resolve().parents[2]
+BACKEND_DIR = ROOT / "backend"
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
+if load_dotenv:
+    load_dotenv(BACKEND_DIR / ".env")
+
+FILE_ID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 )
 
 
@@ -71,13 +92,19 @@ class PineconeStore:
         """
 
         vectors = []
+        file_ids = set()
 
         for embedded in embedded_chunks:
+            document_id = embedded.chunk.metadata.document_id
+            document_name = embedded.chunk.metadata.document_name
+            file_id = extract_file_id(document_id) or extract_file_id(document_name)
+            if file_id:
+                file_ids.add(file_id)
 
             metadata = {
                 "chunk_index": embedded.chunk.metadata.chunk_index,
-                "document_id": embedded.chunk.metadata.document_id,
-                "document_name": embedded.chunk.metadata.document_name,
+                "document_id": document_id,
+                "document_name": document_name,
                 "page_start": embedded.chunk.metadata.page_start,
                 "page_end": embedded.chunk.metadata.page_end,
                 "section": embedded.chunk.metadata.section,
@@ -97,6 +124,8 @@ class PineconeStore:
             batch = vectors[i : i + UPSERT_BATCH_SIZE]
 
             self.index.upsert(vectors=batch)
+
+        mark_files_vectored(file_ids)
 
     # ------------------------------------------------------------------
     # Query
@@ -155,3 +184,21 @@ class PineconeStore:
         """
 
         return self.index.describe_index_stats()
+
+
+def extract_file_id(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    match = FILE_ID_PATTERN.match(str(value))
+    return match.group(0) if match else None
+
+
+def mark_files_vectored(file_ids: set[str]) -> None:
+    if not file_ids:
+        return
+
+    from db.files import mark_file_vectored
+
+    for file_id in file_ids:
+        mark_file_vectored(file_id)

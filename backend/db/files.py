@@ -9,6 +9,10 @@ from db.supabase_client import supabase
 FILE_STORAGE_BUCKET = os.getenv("SUPABASE_FILE_STORAGE_BUCKET", "file_storage")
 FILES_TABLE = os.getenv("SUPABASE_FILES_TABLE", "files")
 SUPABASE_URL = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+FILE_SELECT_COLUMNS = (
+    "file_id,filename,file_type,file_size,file_url,created_at,uploaded_at,"
+    "is_summarized,is_vectored"
+)
 
 
 def upload_file_to_bucket(filename, content, content_type):
@@ -36,6 +40,8 @@ def insert_file_record(filename, content_type, file_size, file_url):
                 "file_type": content_type or "application/octet-stream",
                 "file_size": file_size,
                 "file_url": file_url,
+                "is_summarized": False,
+                "is_vectored": False,
             }
         )
         .execute()
@@ -51,7 +57,7 @@ def store_file(filename, content, content_type):
 def list_documents():
     response = (
         supabase.table(FILES_TABLE)
-        .select("file_id,filename,file_type,file_size,file_url,created_at,uploaded_at")
+        .select(FILE_SELECT_COLUMNS)
         .order("uploaded_at", desc=True)
         .execute()
     )
@@ -62,7 +68,7 @@ def get_document(file_id):
     UUID(str(file_id))
     response = (
         supabase.table(FILES_TABLE)
-        .select("file_id,filename,file_type,file_size,file_url,created_at,uploaded_at")
+        .select(FILE_SELECT_COLUMNS)
         .eq("file_id", str(file_id))
         .limit(1)
         .execute()
@@ -73,3 +79,33 @@ def get_document(file_id):
 def get_document_file_url(file_id):
     document = get_document(file_id)
     return document["file_url"] if document else None
+
+
+def update_file_flags(file_id, **flags):
+    UUID(str(file_id))
+
+    allowed_flags = {"is_summarized", "is_vectored"}
+    row = {
+        key: bool(value)
+        for key, value in flags.items()
+        if key in allowed_flags
+    }
+
+    if not row:
+        return None
+
+    response = (
+        supabase.table(FILES_TABLE)
+        .update(row)
+        .eq("file_id", str(file_id))
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
+def mark_file_summarized(file_id):
+    return update_file_flags(file_id, is_summarized=True)
+
+
+def mark_file_vectored(file_id):
+    return update_file_flags(file_id, is_vectored=True)
