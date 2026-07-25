@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -7,7 +8,6 @@ import {
     FileText,
     MessageSquareText,
     CalendarDays,
-    Sparkles,
     LogOut,
     ChevronRight,
 } from "lucide-react";
@@ -45,8 +45,8 @@ export default function Sidebar() {
             <div className="space-y-6">
                 {/* Brand Logo & Header */}
                 <div className="flex items-center gap-3 px-3 py-2">
-                    <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary text-primary-foreground shadow-md shadow-[#CA8A78]/20">
-                        <Sparkles size={20} className="animate-pulse" />
+                    <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-[#FFFBF0] border border-[#CABDB2] shadow-md shadow-[#CA8A78]/20 p-1">
+                        <Image src="/patrerekhaai-logo.png" alt="PatraRekhaAI" width={40} height={40} className="h-10 w-10 object-contain" />
                     </div>
                     <div>
                         <h1 className="text-base font-bold text-sidebar-foreground tracking-wide leading-tight">
@@ -127,12 +127,13 @@ export default function Sidebar() {
                             <p className="text-[#CABDB2] text-[10px]">admin@patrarekha.ai</p>
                         </div>
                     </div>
-                    <button
+                    <Link
+                        href="/"
                         title="Logout"
                         className="text-[#CABDB2] hover:text-primary transition-colors p-1.5 rounded-lg hover:bg-[#CABDB2]/20"
                     >
                         <LogOut size={16} />
-                    </button>
+                    </Link>
                 </div>
             </div>
         </aside>

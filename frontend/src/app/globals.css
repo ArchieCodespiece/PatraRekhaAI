@@ -165,3 +165,33 @@
   color: #413632 !important;
   padding: 0.5rem !important;
 }
+
+.pill-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pill-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgb(202 189 178 / 0.8);
+  border-radius: 999px;
+  background: #FFFBF0;
+  color: #413632;
+  padding: 0.65rem 1.1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 4px 12px rgb(65 54 50 / 0.08);
+  transition: transform 180ms ease, background-color 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.pill-nav-item:hover {
+  transform: translateY(-2px);
+  border-color: #CA8A78;
+  background: #CA8A78;
+  color: #FFFBF0;
+  box-shadow: 0 8px 18px rgb(202 138 120 / 0.25);
+}
