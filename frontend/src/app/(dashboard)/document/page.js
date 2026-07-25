@@ -1,4 +1,4 @@
-import Documents from "../../components/documents";
+import Documents from "../../../components/documents";
 
 export const metadata = {
     title: "Documents – PatraRekhaAI",
