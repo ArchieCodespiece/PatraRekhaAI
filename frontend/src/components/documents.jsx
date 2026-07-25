@@ -11,6 +11,7 @@ import {
     Loader2,
     RefreshCw,
     Search,
+    Sparkles,
     X,
 } from "lucide-react";
 
@@ -60,11 +61,32 @@ async function fetchDocumentList() {
     return Array.isArray(data.documents) ? data.documents : [];
 }
 
+async function fetchSemanticDocuments(query) {
+    const response = await fetch(`${API_BASE_URL}/semantic-document-search`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query }),
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data?.detail || "Unable to search documents.");
+    }
+
+    return Array.isArray(data.documents) ? data.documents : [];
+}
+
 export default function Documents() {
     const [documents, setDocuments] = useState([]);
     const [selectedDocument, setSelectedDocument] = useState(null);
     const [viewMode, setViewMode] = useState("row");
+    const [searchMode, setSearchMode] = useState("normal");
     const [searchQuery, setSearchQuery] = useState("");
+    const [semanticDocuments, setSemanticDocuments] = useState([]);
+    const [isSemanticLoading, setIsSemanticLoading] = useState(false);
+    const [semanticError, setSemanticError] = useState("");
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState("");
     const [previewUrl, setPreviewUrl] = useState("");
@@ -108,6 +130,10 @@ export default function Documents() {
     }, []);
 
     const filteredDocuments = useMemo(() => {
+        if (searchMode === "semantic") {
+            return searchQuery.trim() ? semanticDocuments : documents;
+        }
+
         const query = searchQuery.trim().toLowerCase();
         if (!query) return documents;
 
@@ -116,7 +142,7 @@ export default function Documents() {
             const filename = cleanFilename(document.filename).toLowerCase();
             return title.includes(query) || filename.includes(query);
         });
-    }, [documents, searchQuery]);
+    }, [documents, searchMode, searchQuery, semanticDocuments]);
 
     const openDocument = (document) => {
         setSelectedDocument(document);
@@ -130,6 +156,36 @@ export default function Documents() {
 
     const closePreview = () => {
         setPreviewUrl("");
+    };
+
+    const handleSearchSubmit = async (event) => {
+        event.preventDefault();
+
+        if (searchMode !== "semantic") {
+            return;
+        }
+
+        const query = searchQuery.trim();
+        if (!query) {
+            setSemanticDocuments([]);
+            setSemanticError("");
+            return;
+        }
+
+        setIsSemanticLoading(true);
+        setSemanticError("");
+
+        try {
+            const results = await fetchSemanticDocuments(query);
+            setSemanticDocuments(results);
+            setSelectedDocument(results[0] || null);
+            setPreviewUrl("");
+        } catch (searchError) {
+            setSemanticDocuments([]);
+            setSemanticError(searchError.message || "Unable to search documents.");
+        } finally {
+            setIsSemanticLoading(false);
+        }
     };
 
     return (
@@ -183,24 +239,77 @@ export default function Documents() {
                         </div>
                     </div>
 
-                    <div className="relative max-w-xl">
-                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                        <input
-                            value={searchQuery}
-                            onChange={(event) => setSearchQuery(event.target.value)}
-                            placeholder="Search processed PDFs..."
-                            className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-9 text-sm text-slate-200 placeholder-slate-500 outline-none transition focus:border-blue-500"
-                        />
-                        {searchQuery && (
+                    <form onSubmit={handleSearchSubmit} className="flex max-w-3xl flex-col gap-2 lg:flex-row lg:items-center">
+                        <div className="flex h-10 shrink-0 rounded-lg border border-slate-800 bg-slate-950 p-1">
                             <button
                                 type="button"
-                                onClick={() => setSearchQuery("")}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-slate-300"
+                                onClick={() => {
+                                    setSearchMode("normal");
+                                    setSemanticError("");
+                                }}
+                                className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition ${
+                                    searchMode === "normal"
+                                        ? "bg-blue-600 text-white"
+                                        : "text-slate-500 hover:text-slate-300"
+                                }`}
                             >
-                                <X size={14} />
+                                <Search size={13} />
+                                Normal
                             </button>
-                        )}
-                    </div>
+                            <button
+                                type="button"
+                                onClick={() => setSearchMode("semantic")}
+                                className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition ${
+                                    searchMode === "semantic"
+                                        ? "bg-blue-600 text-white"
+                                        : "text-slate-500 hover:text-slate-300"
+                                }`}
+                            >
+                                <Sparkles size={13} />
+                                Semantic
+                            </button>
+                        </div>
+
+                        <div className="relative min-w-0 flex-1">
+                            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                            <input
+                                value={searchQuery}
+                                onChange={(event) => {
+                                    setSearchQuery(event.target.value);
+                                    if (searchMode === "normal") {
+                                        setSemanticDocuments([]);
+                                    }
+                                }}
+                                placeholder={searchMode === "semantic" ? "Semantic search across document content..." : "Search by heading or filename..."}
+                                className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-9 pr-20 text-sm text-slate-200 placeholder-slate-500 outline-none transition focus:border-blue-500"
+                            />
+                            {searchQuery && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSearchQuery("");
+                                        setSemanticDocuments([]);
+                                        setSemanticError("");
+                                    }}
+                                    className="absolute right-12 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-slate-300"
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
+                            <button
+                                type="submit"
+                                disabled={searchMode !== "semantic" || !searchQuery.trim() || isSemanticLoading}
+                                className="absolute right-1 top-1/2 flex h-8 w-9 -translate-y-1/2 items-center justify-center rounded-md bg-blue-600 text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                title="Run semantic search"
+                            >
+                                {isSemanticLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                            </button>
+                        </div>
+                    </form>
+
+                    {semanticError && (
+                        <p className="text-xs text-red-400">{semanticError}</p>
+                    )}
                 </header>
 
                 <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
@@ -215,13 +324,24 @@ export default function Documents() {
                                 {error}
                             </div>
                         </div>
+                    ) : isSemanticLoading ? (
+                        <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-500">
+                            <Loader2 size={18} className="animate-spin text-blue-400" />
+                            Searching document meaning...
+                        </div>
                     ) : filteredDocuments.length === 0 ? (
                         <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
                             <FileText size={36} className="text-slate-500" />
                             <div>
-                                <p className="text-sm font-semibold text-slate-300">No processed documents found</p>
+                                <p className="text-sm font-semibold text-slate-300">
+                                    {searchMode === "semantic" && searchQuery.trim()
+                                        ? "No semantic matches found"
+                                        : "No processed documents found"}
+                                </p>
                                 <p className="mt-1 text-xs text-slate-500">
-                                    Documents appear here after summarization and vector storage complete.
+                                    {searchMode === "semantic" && searchQuery.trim()
+                                        ? "Try a different phrase from the document content."
+                                        : "Documents appear here after summarization and vector storage complete."}
                                 </p>
                             </div>
                         </div>

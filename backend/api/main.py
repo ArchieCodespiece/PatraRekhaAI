@@ -27,13 +27,18 @@ if str(AI_PIPELINE_DIR) not in sys.path:
 from db.document_metadata import list_document_metadata, list_document_metadata_by_file_ids
 from db.files import get_document_file_url, list_documents, list_ready_documents
 from embedding.embedder import GeminiEmbedder
-from vectorstore.retrieval import get_chunks_from_documents
+from vectorstore.retrieval import get_chunks, get_chunks_from_documents
 from webhooks.router import router as webhooks_router
 from webhooks.service.document_queue import document_queue
 
 MAX_SELECTED_DOCUMENTS = 5
 TOP_K_PER_DOCUMENT = 4
 MAX_CONTEXT_CHARS = 16_000
+SEMANTIC_DOCUMENT_TOP_K = 25
+FILE_ID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
 
 
 @asynccontextmanager
@@ -61,6 +66,10 @@ app.include_router(webhooks_router)
 class ChatRequest(BaseModel):
     query: str
     selected_documents: List[str]
+
+
+class DocumentSearchRequest(BaseModel):
+    query: str
 
 
 _llm_module: Any | None = None
@@ -216,8 +225,7 @@ def event_priority(event_text: str) -> str:
     return "normal"
 
 
-@app.get("/get-documents")
-def get_documents():
+def ready_documents_with_metadata() -> List[Dict[str, Any]]:
     documents = list_ready_documents()
     file_ids = [str(document["file_id"]) for document in documents if document.get("file_id")]
     metadata_rows = list_document_metadata_by_file_ids(file_ids)
@@ -242,7 +250,110 @@ def get_documents():
             }
         )
 
+    return enriched_documents
+
+
+def file_id_from_vector_metadata(metadata: Dict[str, Any]) -> str | None:
+    for key in ("document_id", "document_name"):
+        value = str(metadata.get(key) or "")
+        match = FILE_ID_PATTERN.match(value)
+        if match:
+            return match.group(0)
+
+    return None
+
+
+def document_matches_vector_metadata(document: Dict[str, Any], metadata: Dict[str, Any]) -> bool:
+    file_id = str(document.get("file_id") or "")
+    filename_stem = clean_document_key(str(document.get("filename") or ""))
+    vector_names = [
+        clean_document_key(str(metadata.get("document_id") or "")),
+        clean_document_key(str(metadata.get("document_name") or "")),
+    ]
+
+    if file_id and any(name.startswith(file_id) for name in vector_names):
+        return True
+
+    if not filename_stem:
+        return False
+
+    return any(
+        name == filename_stem
+        or name.endswith(f"-{filename_stem}")
+        for name in vector_names
+    )
+
+
+def match_score(match: Any) -> float:
+    if isinstance(match, dict):
+        return float(match.get("score") or 0)
+    return float(getattr(match, "score", 0) or 0)
+
+
+@app.get("/get-documents")
+def get_documents():
+    enriched_documents = ready_documents_with_metadata()
     return {"documents": enriched_documents}
+
+
+@app.post("/semantic-document-search")
+def semantic_document_search(request: DocumentSearchRequest):
+    query = request.query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+
+    documents = ready_documents_with_metadata()
+    documents_by_file_id = {
+        str(document.get("file_id")): document
+        for document in documents
+        if document.get("file_id")
+    }
+
+    embedder = GeminiEmbedder()
+    query_embedding = embedder.embed_text(query)
+    retrieval_result = get_chunks(query_embedding=query_embedding, top_k=SEMANTIC_DOCUMENT_TOP_K)
+
+    matches = retrieval_result.get("matches", []) if isinstance(retrieval_result, dict) else getattr(retrieval_result, "matches", [])
+    ranked_documents: Dict[str, Dict[str, Any]] = {}
+
+    for match in matches:
+        metadata = get_match_metadata(match)
+        file_id = file_id_from_vector_metadata(metadata)
+
+        if file_id and file_id in documents_by_file_id:
+            document = documents_by_file_id[file_id]
+        else:
+            document = next(
+                (
+                    candidate
+                    for candidate in documents
+                    if document_matches_vector_metadata(candidate, metadata)
+                ),
+                None,
+            )
+
+        if not document:
+            continue
+
+        document_file_id = str(document["file_id"])
+        score = match_score(match)
+        existing = ranked_documents.get(document_file_id)
+
+        if not existing or score > existing["semantic_score"]:
+            ranked_documents[document_file_id] = {
+                **document,
+                "semantic_score": score,
+                "matched_document_name": metadata.get("document_name"),
+                "matched_chunk_id": get_match_field(match, "id"),
+            }
+
+    results = sorted(
+        ranked_documents.values(),
+        key=lambda document: document["semantic_score"],
+        reverse=True,
+    )
+
+    return {"documents": results}
 
 
 @app.get("/calender-events")
