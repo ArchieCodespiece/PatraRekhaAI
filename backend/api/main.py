@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import sys
 from contextlib import asynccontextmanager
@@ -35,6 +36,7 @@ MAX_SELECTED_DOCUMENTS = 5
 TOP_K_PER_DOCUMENT = 4
 MAX_CONTEXT_CHARS = 16_000
 SEMANTIC_DOCUMENT_TOP_K = 25
+SEMANTIC_DOCUMENT_SCORE_THRESHOLD = float(os.getenv("SEMANTIC_DOCUMENT_SCORE_THRESHOLD", "0.35"))
 FILE_ID_PATTERN = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
@@ -318,6 +320,10 @@ def semantic_document_search(request: DocumentSearchRequest):
 
     for match in matches:
         metadata = get_match_metadata(match)
+        score = match_score(match)
+        if score < SEMANTIC_DOCUMENT_SCORE_THRESHOLD:
+            continue
+
         file_id = file_id_from_vector_metadata(metadata)
 
         if file_id and file_id in documents_by_file_id:
@@ -336,7 +342,6 @@ def semantic_document_search(request: DocumentSearchRequest):
             continue
 
         document_file_id = str(document["file_id"])
-        score = match_score(match)
         existing = ranked_documents.get(document_file_id)
 
         if not existing or score > existing["semantic_score"]:
