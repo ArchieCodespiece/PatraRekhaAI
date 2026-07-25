@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import { format, isSameDay } from "date-fns";
 import {
@@ -15,9 +15,12 @@ import {
     Trash2,
     AlertTriangle,
     Flame,
-    Info
+    Info,
+    Loader2
 } from "lucide-react";
 import "react-day-picker/style.css";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8001";
 
 // Priority config
 const PRIORITY_CONFIG = {
@@ -53,54 +56,72 @@ const PRIORITY_CONFIG = {
     },
 };
 
-// Sample events with priority
-const initialEvents = [
-    {
-        id: "1",
-        date: new Date(),
-        title: "Project Sync & Standup",
-        time: "10:00 AM – 11:00 AM",
-        category: "Meeting",
-        priority: "high",
-        completed: false,
-    },
-    {
-        id: "2",
-        date: new Date(),
-        title: "Review PatraRekha UI Mockups",
-        time: "02:30 PM – 03:30 PM",
-        category: "Design",
-        priority: "medium",
-        completed: true,
-    },
-    {
-        id: "3",
-        date: new Date(Date.now() + 86400000 * 2),
-        title: "Sprint Planning & Backlog Refinement",
-        time: "11:00 AM – 12:30 PM",
-        category: "Work",
-        priority: "normal",
-        completed: false,
-    },
-    {
-        id: "4",
-        date: new Date(Date.now() + 86400000 * 4),
-        title: "Client Presentation – Q3 Roadmap",
-        time: "03:00 PM – 04:00 PM",
-        category: "Meeting",
-        priority: "high",
-        completed: false,
-    },
-];
+function parseApiDate(value) {
+    if (!value) return new Date();
+    const [year, month, day] = value.split("-").map(Number);
+    if (!year || !month || !day) return new Date(value);
+    return new Date(year, month - 1, day);
+}
+
+function normalizeApiEvent(event) {
+    return {
+        id: event.id,
+        date: parseApiDate(event.date),
+        title: event.title || "Important date",
+        time: event.time || "All Day",
+        category: event.category || "Document",
+        priority: event.priority || "normal",
+        completed: Boolean(event.completed),
+        fileHeading: event.file_heading,
+    };
+}
+
+async function fetchCalendarEvents() {
+    const response = await fetch(`${API_BASE_URL}/calender-events`);
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data?.detail || "Unable to load calendar events.");
+    }
+
+    return Array.isArray(data.events) ? data.events.map(normalizeApiEvent) : [];
+}
 
 export default function Calendar() {
     const [selectedDate, setSelectedDate] = useState(new Date());
-    const [events, setEvents] = useState(initialEvents);
+    const [events, setEvents] = useState([]);
+    const [isEventsLoading, setIsEventsLoading] = useState(true);
+    const [eventsError, setEventsError] = useState("");
     const [isAddingEvent, setIsAddingEvent] = useState(false);
     const [newEventTitle, setNewEventTitle] = useState("");
     const [newEventTime, setNewEventTime] = useState("09:00 AM");
     const [newEventCategory, setNewEventCategory] = useState("Meeting");
     const [newEventPriority, setNewEventPriority] = useState("normal");
+
+    useEffect(() => {
+        let isActive = true;
+
+        fetchCalendarEvents()
+            .then((nextEvents) => {
+                if (isActive) {
+                    setEvents(nextEvents);
+                }
+            })
+            .catch((error) => {
+                if (isActive) {
+                    setEventsError(error.message || "Unable to load calendar events.");
+                }
+            })
+            .finally(() => {
+                if (isActive) {
+                    setIsEventsLoading(false);
+                }
+            });
+
+        return () => {
+            isActive = false;
+        };
+    }, []);
 
     const selectedDateEvents = selectedDate
         ? events.filter((evt) => isSameDay(new Date(evt.date), selectedDate))
@@ -395,6 +416,11 @@ export default function Calendar() {
                                                     <Tag size={10} className="text-blue-400" />
                                                     {evt.category}
                                                 </span>
+                                                {evt.fileHeading && (
+                                                    <span className="truncate text-[11px] text-slate-500">
+                                                        {evt.fileHeading}
+                                                    </span>
+                                                )}
                                                 <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium ${cfg.badgeBg}`}>
                                                     <PriorityIcon size={10} />
                                                     {cfg.label}
@@ -413,6 +439,20 @@ export default function Calendar() {
                                 </div>
                             );
                         })
+                    ) : isEventsLoading ? (
+                        <div className="flex-1 flex flex-col items-center justify-center p-8 border border-dashed border-slate-800 rounded-xl text-center">
+                            <Loader2 size={24} className="mb-3 animate-spin text-blue-400" />
+                            <p className="text-sm font-medium text-slate-300">Loading document deadlines</p>
+                            <p className="text-xs text-slate-500 mt-1 max-w-xs">
+                                Pulling extracted dates from document metadata.
+                            </p>
+                        </div>
+                    ) : eventsError ? (
+                        <div className="flex-1 flex flex-col items-center justify-center p-8 border border-dashed border-slate-800 rounded-xl text-center">
+                            <AlertCircle size={24} className="mb-3 text-red-400" />
+                            <p className="text-sm font-medium text-slate-300">Could not load calendar events</p>
+                            <p className="text-xs text-slate-500 mt-1 max-w-xs">{eventsError}</p>
+                        </div>
                     ) : (
                         <div className="flex-1 flex flex-col items-center justify-center p-8 border border-dashed border-slate-800 rounded-xl text-center">
                             <div className="p-3 rounded-full bg-slate-800/50 text-slate-500 mb-3">

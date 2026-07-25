@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import re
 import sys
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -21,7 +24,7 @@ AI_PIPELINE_DIR = REPO_ROOT / "AI pipeline"
 if str(AI_PIPELINE_DIR) not in sys.path:
     sys.path.insert(0, str(AI_PIPELINE_DIR))
 
-from db.document_metadata import list_document_metadata_by_file_ids
+from db.document_metadata import list_document_metadata, list_document_metadata_by_file_ids
 from db.files import get_document_file_url, list_documents, list_ready_documents
 from embedding.embedder import GeminiEmbedder
 from vectorstore.retrieval import get_chunks_from_documents
@@ -175,6 +178,44 @@ def resolve_pinecone_document_names(selected_documents: List[str]) -> List[str]:
     return list(dict.fromkeys(resolved_names))
 
 
+def parse_timeline_json(value: Any) -> List[Dict[str, Any]]:
+    if not value:
+        return []
+
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return [item for item in parsed if isinstance(item, dict)] if isinstance(parsed, list) else []
+
+    return []
+
+
+def parse_dd_mm_yyyy(value: str) -> date | None:
+    match = re.search(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b", value or "")
+    if not match:
+        return None
+
+    day, month, year = (int(part) for part in match.groups())
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def event_priority(event_text: str) -> str:
+    text = (event_text or "").lower()
+    if any(word in text for word in ("deadline", "submission", "award", "closes", "due")):
+        return "high"
+    if any(word in text for word in ("opens", "begins", "notification", "visit", "presentation")):
+        return "medium"
+    return "normal"
+
+
 @app.get("/get-documents")
 def get_documents():
     documents = list_ready_documents()
@@ -202,6 +243,40 @@ def get_documents():
         )
 
     return {"documents": enriched_documents}
+
+
+@app.get("/calender-events")
+def get_calender_events():
+    metadata_rows = list_document_metadata()
+    events = []
+
+    for metadata in metadata_rows:
+        file_id = str(metadata.get("file_id") or "")
+        file_heading = metadata.get("file_heading") or "Untitled Document"
+
+        for index, item in enumerate(parse_timeline_json(metadata.get("timeline_json"))):
+            event_date = parse_dd_mm_yyyy(str(item.get("date") or ""))
+            if not event_date:
+                continue
+
+            event_text = str(item.get("event") or "").strip() or "Important date"
+            events.append(
+                {
+                    "id": f"{file_id}-{index}",
+                    "file_id": file_id,
+                    "file_heading": file_heading,
+                    "date": event_date.isoformat(),
+                    "display_date": item.get("date"),
+                    "title": event_text,
+                    "time": "All Day",
+                    "category": "Document",
+                    "priority": event_priority(event_text),
+                    "completed": False,
+                }
+            )
+
+    events.sort(key=lambda event: event["date"])
+    return {"events": events}
 
 
 @app.get("/get-documents/{file_id}")

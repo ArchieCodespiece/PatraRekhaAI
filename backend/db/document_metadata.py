@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -31,7 +32,7 @@ def upsert_document_metadata(
         "file_id": str(file_id),
         "file_heading": file_heading or "Untitled Document",
         "summarization": summarization,
-        "timeline_json": timeline_json or [],
+        "timeline_json": json.dumps(timeline_json or []),
         "updated_at": now,
     }
 
@@ -55,6 +56,16 @@ def list_document_metadata_by_file_ids(file_ids: list[str]):
         supabase.table(DOCUMENT_METADATA_TABLE)
         .select(DOCUMENT_METADATA_SELECT_COLUMNS)
         .in_("file_id", [str(file_id) for file_id in file_ids])
+        .execute()
+    )
+
+    return response.data
+
+
+def list_document_metadata():
+    response = (
+        supabase.table(DOCUMENT_METADATA_TABLE)
+        .select(DOCUMENT_METADATA_SELECT_COLUMNS)
         .execute()
     )
 
