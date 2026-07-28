@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PIPELINE_ENTRYPOINT = PROJECT_ROOT / "main.py"
 DEFAULT_PIPELINE_PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python"
+DEFAULT_WINDOWS_PIPELINE_PYTHON = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
 TEMP_PDF_DIR = Path(tempfile.gettempdir()) / "patrarekha-webhook-pdfs"
 
 
@@ -79,6 +80,9 @@ def pipeline_python():
     configured = os.getenv("PIPELINE_PYTHON")
     if configured:
         return configured
+
+    if DEFAULT_WINDOWS_PIPELINE_PYTHON.exists():
+        return str(DEFAULT_WINDOWS_PIPELINE_PYTHON)
 
     if DEFAULT_PIPELINE_PYTHON.exists():
         return str(DEFAULT_PIPELINE_PYTHON)

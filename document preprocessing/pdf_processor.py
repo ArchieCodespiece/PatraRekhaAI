@@ -11,7 +11,6 @@ try:
     from .ocr_engine import run_paddle_ocr
     from .table_extraction import extract_tables_from_page
     from .text_cleaner import clean_text
-    from .checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
     from .utils import contiguous_ranges, write_output
 except ImportError:
     from config import POPPLER_PATH, DPI, BATCH_SIZE, CHECKPOINT
@@ -19,8 +18,31 @@ except ImportError:
     from ocr_engine import run_paddle_ocr
     from table_extraction import extract_tables_from_page
     from text_cleaner import clean_text
-    from checkpoint import clear_checkpoint, load_checkpoint, save_checkpoint
     from utils import contiguous_ranges, write_output
+
+
+def load_checkpoint(checkpoint_path):
+    try:
+        with open(checkpoint_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def save_checkpoint(results, checkpoint_path):
+    with open(checkpoint_path, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=4, ensure_ascii=False)
+
+
+def clear_checkpoint(checkpoint_path):
+    try:
+        import os
+
+        os.remove(checkpoint_path)
+    except FileNotFoundError:
+        pass
 
 
 def process_pdf(

@@ -1,232 +1,137 @@
-# PatraRekhaAI Backend Start Guide
+# PatraRekhaAI Start Guide
 
-Use this one backend start command everywhere. The real FastAPI app lives in:
+This repo was written with Linux-style paths in a few places, but it can run on Windows with Python 3.12 after the compatibility fixes in `main.py` and `backend/webhooks/service/processor.py`.
+
+## 1. Create the environments
+
+Use Python 3.12 for both the backend and the pipeline.
+
+```powershell
+py -3.12 -m venv .venv
+py -3.12 -m venv backend\.venv
+```
+
+## 2. Install dependencies
+
+Backend:
+
+```powershell
+backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+```
+
+Pipeline:
+
+```powershell
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+If the OCR stack needs extra packages on your machine, install them in the root `.venv` only.
+
+## 3. Configure environment variables
+
+Create these files if they do not already exist:
 
 ```text
-backend/api/main.py
+backend\.env
+.env
 ```
 
-## 1. Check backend env
+Put the API keys and settings from the pasted note into the matching file.
 
-Make sure this file exists:
-
-```bash
-backend/.env
-```
-
-Minimum required values:
+Recommended split:
 
 ```env
+# backend\.env
 SUPABASE_URL=...
 SUPABASE_SERVICE_ROLE_KEY=...
-SUPABASE_FILE_STORAGE_BUCKET=file_storage
-SUPABASE_FILES_TABLE=files
-```
+WEBHOOK_SECRET=...
+PIPELINE_PYTHON=D:\pat\PatraRekhaAI\.venv\Scripts\python.exe
 
-Optional webhook/queue values:
+IMAP_HOST=imap.gmail.com
+IMAP_PORT=993
+IMAP_USER=...
+IMAP_PASSWORD=...
+IMAP_MAILBOX=INBOX
+POLL_INTERVAL_SECONDS=5
+STORAGE_DIR=./data
+MAX_ATTACHMENT_BYTES=26214400
+ALLOWED_SENDERS=
+```
 
 ```env
-WEBHOOK_SECRET=change-this-secret
-WEBHOOK_QUEUE_MAX_SIZE=100
-WEBHOOK_QUEUE_WORKERS=2
-WEBHOOK_QUEUE_MAX_ATTEMPTS=3
-WEBHOOK_QUEUE_RETRY_DELAY_SECONDS=2
-PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+# .env
+GROQ_API_KEY=...
+GROQ_MODEL=llama-3.1-8b-instant
+GEMINI_API_KEY=...
+PINECONE_API_KEY=...
+SUPABASE_URL=...
+SUPABASE_PUBLISHABLE_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
 ```
 
-Install backend dependencies into the backend venv:
+## 4. Start the backend
 
-```bash
+Run this from the repo root:
+
+```powershell
+backend\.venv\Scripts\python.exe -m uvicorn api.main:app --host 127.0.0.1 --port 8010 --app-dir backend
+```
+
+If you prefer to start from inside `backend`, this also works:
+
+```powershell
 cd backend
-.venv/bin/python -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m uvicorn api.main:app --host 127.0.0.1 --port 8010
 ```
 
-The webhook worker runs the root `main.py` pipeline using the project root `.venv`, because the OCR/Paddle stack needs Python 3.12. Check it with:
+## 5. Start email ingestion
 
-```bash
-cd ..
-.venv/bin/python --version
-.venv/bin/python -c "import pdfplumber, paddleocr, google.genai, pinecone; print('pipeline env ok')"
+```powershell
+cd backend\email-ingestion
+..\..\.\venv\Scripts\python.exe ingest.py
 ```
 
-If your pipeline Python lives somewhere else, set this in `backend/.env`:
+If you run into path issues there, use the full path:
 
-```env
-PIPELINE_PYTHON=/absolute/path/to/python
+```powershell
+D:\pat\PatraRekhaAI\backend\.venv\Scripts\python.exe ingest.py
 ```
 
-## 2. Start the FastAPI backend
+## 6. Run the pipeline directly
 
-Run from the project root:
+To test the PDF pipeline on a local file:
 
-```bash
-cd backend
-.venv/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8010
+```powershell
+.venv\Scripts\python.exe main.py ingestion\Quality_Auditor_Tender_to_be_uploaded.pdf
 ```
 
-Backend URL:
+Or use the default sample PDF:
 
-```text
-http://127.0.0.1:8010
+```powershell
+.venv\Scripts\python.exe main.py
 ```
 
-Do not use multiple different start paths unless needed. Prefer `api.main:app` because it directly starts `backend/api/main.py`.
+## 7. Useful checks
 
-## 3. Start email ingestion
+Verify the Python versions:
 
-Open another terminal and run from the project root:
-
-```bash
-cd backend/email-ingestion
-.venv/bin/python ingest.py
+```powershell
+.venv\Scripts\python.exe --version
+backend\.venv\Scripts\python.exe --version
 ```
 
-This starts the IMAP email poller. When a new unread email has an attachment, `ingest.py` uploads the file to Supabase Storage bucket `file_storage` and inserts a row into `public.files`.
+Verify the backend:
 
-That insert is what triggers the Supabase webhook:
-
-```text
-/webhooks/supabase/files
-```
-
-## 4. Start backend and ingestion together for local dev
-
-If you want one command that starts both processes, run this from the project root:
-
-```bash
-(cd backend && .venv/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8010) &
-(cd backend/email-ingestion && .venv/bin/python ingest.py) &
-wait
-```
-
-Stop both with `Ctrl+C`.
-
-For less confusion while debugging, the two-terminal method is easier because backend logs and ingestion logs stay separate.
-
-## 5. Verify normal document APIs
-
-In another terminal:
-
-```bash
+```powershell
 curl http://127.0.0.1:8010/get-documents
 ```
 
-For one document:
+Verify the webhook queue:
 
-```bash
-curl http://127.0.0.1:8010/get-documents/<file_id>
-```
-
-## 6. Verify webhook queue is running
-
-```bash
+```powershell
 curl http://127.0.0.1:8010/webhooks/queue/status
 ```
 
-Expected shape:
+## 8. Important note about the pasted secrets
 
-```json
-{
-  "queued": 0,
-  "max_size": 100,
-  "workers": 2,
-  "processed": 0,
-  "failed": 0,
-  "started": true
-}
-```
-
-## 7. Supabase webhook URL
-
-In Supabase, create a Database Webhook for:
-
-```text
-table: public.files
-event: INSERT
-method: POST
-url: https://your-backend-url/webhooks/supabase/files
-```
-
-For local testing with a tunnel, use:
-
-```text
-https://your-tunnel-url/webhooks/supabase/files
-```
-
-If `WEBHOOK_SECRET` is set in `backend/.env`, send either:
-
-```text
-X-Webhook-Secret: change-this-secret
-```
-
-or:
-
-```text
-Authorization: Bearer change-this-secret
-```
-
-## 8. Local webhook test
-
-This only tests that the webhook accepts a payload and pushes it into the queue.
-Use a real `file_id` from Supabase if you want the pipeline worker to successfully download and process the file.
-
-```bash
-curl -X POST http://127.0.0.1:8010/webhooks/supabase/files \
-  -H "Content-Type: application/json" \
-  -H "X-Webhook-Secret: change-this-secret" \
-  -d '{
-    "type": "INSERT",
-    "table": "files",
-    "record": {
-      "file_id": "00000000-0000-0000-0000-000000000001",
-      "filename": "sample.pdf",
-      "file_url": "https://example.com/sample.pdf",
-      "file_type": "application/pdf",
-      "file_size": 123
-    }
-  }'
-```
-
-Expected response:
-
-```json
-{
-  "accepted": true,
-  "file_id": "00000000-0000-0000-0000-000000000001",
-  "queue": {
-    "queued": 1,
-    "max_size": 100,
-    "workers": 2,
-    "processed": 0,
-    "failed": 0,
-    "started": true
-  }
-}
-```
-
-If the `file_id` is fake, the worker will retry and then mark it failed. That is okay for a webhook acceptance test.
-
-## 9. What happens after everything is running
-
-Flow:
-
-```text
-ingest.py polls email inbox
-  -> email attachment found
-  -> stored in Supabase bucket file_storage
-  -> row inserted in public.files
-  -> Supabase calls /webhooks/supabase/files
-  -> backend accepts job into bounded queue
-  -> queue worker fetches DB row and downloads file from file_storage
-  -> queue worker saves the PDF to /tmp/patrarekha-webhook-pdfs
-  -> backend runs .venv/bin/python main.py temp_pdf_path --cleanup-input
-  -> main.py runs OCR, chunking, embeddings, and Pinecone upload
-  -> temp PDF and generated temp JSON are deleted
-```
-
-Pipeline handoff:
-
-```text
-backend/webhooks/service/processor.py -> run_document_pipeline(document, content)
-main.py -> run_pipeline(pdf_path, cleanup_input=True)
-```
+The pasted setup note contains live-looking credentials. If those are real, rotate them and move them into your local `.env` files instead of keeping them in chat or committed to git.
