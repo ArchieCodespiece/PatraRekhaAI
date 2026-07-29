@@ -1,6 +1,6 @@
 # Email Ingestion
 
-This Python service polls an IMAP mailbox for unread messages, uploads every attachment to the `file_storage` Supabase bucket, and inserts a row in the `files` table.
+This Python service polls an IMAP mailbox for unread messages, uploads every attachment to the `file_storage` Supabase bucket, and inserts a row in the `files` table. Each stored row is tagged with the mailbox owner email so document lists stay isolated per account.
 
 ## Run locally
 
@@ -20,16 +20,8 @@ Use a service-role key for this backend-only process. The publishable/anon key w
 Create the table before running the poller:
 
 ```sql
-create table public.files (
-  file_id uuid not null default gen_random_uuid (),
-  filename text not null,
-  file_url text not null,
-  file_type character varying(100) not null,
-  file_size bigint not null,
-  created_at timestamp with time zone not null default timezone ('utc'::text, now()),
-  uploaded_at timestamp with time zone not null default timezone ('utc'::text, now()),
-  constraint files_pkey primary key (file_id)
-) TABLESPACE pg_default;
+alter table public.files
+  add column if not exists owner_email text;
 
-create index IF not exists idx_files_filename on public.files using btree (filename) TABLESPACE pg_default;
+create index if not exists idx_files_owner_email on public.files using btree (owner_email);
 ```

@@ -10,7 +10,7 @@ FILE_STORAGE_BUCKET = os.getenv("SUPABASE_FILE_STORAGE_BUCKET", "file_storage")
 FILES_TABLE = os.getenv("SUPABASE_FILES_TABLE", "files")
 SUPABASE_URL = (os.getenv("SUPABASE_URL") or "").rstrip("/")
 FILE_SELECT_COLUMNS = (
-    "file_id,filename,file_type,file_size,file_url,created_at,uploaded_at,"
+    "file_id,filename,file_type,file_size,file_url,owner_email,created_at,uploaded_at,"
     "is_summarized,is_vectored"
 )
 
@@ -31,7 +31,7 @@ def get_file_url(filename):
     return supabase.storage.from_(FILE_STORAGE_BUCKET).get_public_url(filename)
 
 
-def insert_file_record(filename, content_type, file_size, file_url):
+def insert_file_record(filename, content_type, file_size, file_url, owner_email=None):
     response = (
         supabase.table(FILES_TABLE)
         .insert(
@@ -40,6 +40,7 @@ def insert_file_record(filename, content_type, file_size, file_url):
                 "file_type": content_type or "application/octet-stream",
                 "file_size": file_size,
                 "file_url": file_url,
+                "owner_email": owner_email,
                 "is_summarized": False,
                 "is_vectored": False,
             }
@@ -49,47 +50,45 @@ def insert_file_record(filename, content_type, file_size, file_url):
     return response.data[0] if response.data else None
 
 
-def store_file(filename, content, content_type):
+def store_file(filename, content, content_type, owner_email=None):
     upload_file_to_bucket(filename, content, content_type)
-    return insert_file_record(filename, content_type, len(content), get_file_url(filename))
+    return insert_file_record(filename, content_type, len(content), get_file_url(filename), owner_email=owner_email)
 
 
-def list_documents():
-    response = (
-        supabase.table(FILES_TABLE)
-        .select(FILE_SELECT_COLUMNS)
-        .order("uploaded_at", desc=True)
-        .execute()
-    )
+def list_documents(owner_email=None):
+    query = supabase.table(FILES_TABLE).select(FILE_SELECT_COLUMNS)
+    if owner_email:
+        query = query.eq("owner_email", owner_email)
+
+    response = query.order("uploaded_at", desc=True).execute()
     return response.data
 
 
-def list_ready_documents():
-    response = (
+def list_ready_documents(owner_email=None):
+    query = (
         supabase.table(FILES_TABLE)
         .select(FILE_SELECT_COLUMNS)
         .eq("is_summarized", True)
         .eq("is_vectored", True)
-        .order("uploaded_at", desc=True)
-        .execute()
     )
+    if owner_email:
+        query = query.eq("owner_email", owner_email)
+
+    response = query.order("uploaded_at", desc=True).execute()
     return response.data
 
 
-def get_document(file_id):
+def get_document(file_id, owner_email=None):
     UUID(str(file_id))
-    response = (
-        supabase.table(FILES_TABLE)
-        .select(FILE_SELECT_COLUMNS)
-        .eq("file_id", str(file_id))
-        .limit(1)
-        .execute()
-    )
+    query = supabase.table(FILES_TABLE).select(FILE_SELECT_COLUMNS).eq("file_id", str(file_id))
+    if owner_email:
+        query = query.eq("owner_email", owner_email)
+    response = query.limit(1).execute()
     return response.data[0] if response.data else None
 
 
-def get_document_file_url(file_id):
-    document = get_document(file_id)
+def get_document_file_url(file_id, owner_email=None):
+    document = get_document(file_id, owner_email=owner_email)
     return document["file_url"] if document else None
 
 

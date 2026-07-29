@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getStoredAuthUser } from "../lib/supabaseAuth";
 import {
     AlertTriangle,
     CalendarClock,
@@ -50,8 +51,10 @@ function formatBytes(bytes) {
     return `${(size / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
-async function fetchDocumentList() {
-    const response = await fetch(`${API_BASE_URL}/get-documents`);
+async function fetchDocumentList(ownerEmail) {
+    const url = new URL(`${API_BASE_URL}/get-documents`);
+    if (ownerEmail) url.searchParams.set("owner_email", ownerEmail);
+    const response = await fetch(url);
     const data = await response.json();
 
     if (!response.ok) {
@@ -61,13 +64,13 @@ async function fetchDocumentList() {
     return Array.isArray(data.documents) ? data.documents : [];
 }
 
-async function fetchSemanticDocuments(query) {
+async function fetchSemanticDocuments(query, ownerEmail) {
     const response = await fetch(`${API_BASE_URL}/semantic-document-search`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, owner_email: ownerEmail }),
     });
     const data = await response.json();
 
@@ -90,13 +93,14 @@ export default function Documents() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState("");
     const [previewUrl, setPreviewUrl] = useState("");
+    const [ownerEmail] = useState(() => getStoredAuthUser()?.email || "");
 
     const refreshDocuments = async () => {
         setIsLoading(true);
         setError("");
 
         try {
-            setDocuments(await fetchDocumentList());
+            setDocuments(await fetchDocumentList(ownerEmail));
         } catch (fetchError) {
             setError(fetchError.message || "Unable to load documents.");
         } finally {
@@ -107,7 +111,7 @@ export default function Documents() {
     useEffect(() => {
         let isActive = true;
 
-        fetchDocumentList()
+        fetchDocumentList(ownerEmail)
             .then((nextDocuments) => {
                 if (isActive) {
                     setDocuments(nextDocuments);
@@ -127,7 +131,7 @@ export default function Documents() {
         return () => {
             isActive = false;
         };
-    }, []);
+    }, [ownerEmail]);
 
     const filteredDocuments = useMemo(() => {
         if (searchMode === "semantic") {
@@ -176,7 +180,7 @@ export default function Documents() {
         setSemanticError("");
 
         try {
-            const results = await fetchSemanticDocuments(query);
+            const results = await fetchSemanticDocuments(query, ownerEmail);
             setSemanticDocuments(results);
             setSelectedDocument(results[0] || null);
             setPreviewUrl("");

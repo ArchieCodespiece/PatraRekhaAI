@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { getStoredAuthUser } from "../lib/supabaseAuth";
 import {
     FileText,
     Send,
@@ -63,8 +64,10 @@ function normalizeDocument(document) {
     };
 }
 
-async function fetchChatDocuments() {
-    const response = await fetch(`${API_BASE_URL}/get-documents`);
+async function fetchChatDocuments(ownerEmail) {
+    const url = new URL(`${API_BASE_URL}/get-documents`);
+    if (ownerEmail) url.searchParams.set("owner_email", ownerEmail);
+    const response = await fetch(url);
     const data = await response.json();
 
     if (!response.ok) {
@@ -84,6 +87,7 @@ export default function ChatWithPDF() {
     const [documents, setDocuments] = useState([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [isPanelOpen, setIsPanelOpen] = useState(true);
+    const [ownerEmail] = useState(() => getStoredAuthUser()?.email || "");
 
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
@@ -131,7 +135,7 @@ export default function ChatWithPDF() {
     useEffect(() => {
         let isActive = true;
 
-        fetchChatDocuments()
+        fetchChatDocuments(ownerEmail)
             .then((nextDocuments) => {
                 if (isActive) {
                     setDocuments(nextDocuments);
@@ -151,7 +155,7 @@ export default function ChatWithPDF() {
         return () => {
             isActive = false;
         };
-    }, []);
+    }, [ownerEmail]);
 
     const handleSend = async (e) => {
         e?.preventDefault();
@@ -181,6 +185,7 @@ export default function ChatWithPDF() {
                 body: JSON.stringify({
                     query: text,
                     selected_documents: selectedDocumentNames,
+                    owner_email: ownerEmail,
                 }),
             });
 

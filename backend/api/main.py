@@ -13,11 +13,16 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = BACKEND_DIR.parent
+load_dotenv(BACKEND_DIR / ".env")
+load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv()
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AI_PIPELINE_DIR = REPO_ROOT / "AI pipeline"
@@ -27,6 +32,8 @@ if str(AI_PIPELINE_DIR) not in sys.path:
 
 from db.document_metadata import list_document_metadata, list_document_metadata_by_file_ids
 from db.files import get_document_file_url, list_documents, list_ready_documents
+from db.gmail_connections import clear_gmail_connections, delete_gmail_connection, get_gmail_connection, upsert_gmail_connection
+from services.gmail_oauth import build_authorize_url, exchange_code_for_tokens, verify_state
 from embedding.embedder import GeminiEmbedder
 from vectorstore.retrieval import get_chunks, get_chunks_from_documents
 from webhooks.router import router as webhooks_router
@@ -68,10 +75,12 @@ app.include_router(webhooks_router)
 class ChatRequest(BaseModel):
     query: str
     selected_documents: List[str]
+    owner_email: str | None = None
 
 
 class DocumentSearchRequest(BaseModel):
     query: str
+    owner_email: str | None = None
 
 
 _llm_module: Any | None = None
@@ -151,7 +160,7 @@ def clean_document_key(value: str) -> str:
     return Path(value).stem.strip()
 
 
-def resolve_pinecone_document_names(selected_documents: List[str]) -> List[str]:
+def resolve_pinecone_document_names(selected_documents: List[str], owner_email: str | None = None) -> List[str]:
     """
     Temporary bridge for already-indexed chunks whose Pinecone document_name is
     built from the webhook temp filename: <file_id>-<filename_stem>.
@@ -161,7 +170,7 @@ def resolve_pinecone_document_names(selected_documents: List[str]) -> List[str]:
     resolved_names = []
 
     try:
-        documents = list_documents()
+        documents = list_documents(owner_email=owner_email)
     except Exception:
         documents = []
 
@@ -227,8 +236,8 @@ def event_priority(event_text: str) -> str:
     return "normal"
 
 
-def ready_documents_with_metadata() -> List[Dict[str, Any]]:
-    documents = list_ready_documents()
+def ready_documents_with_metadata(owner_email: str | None = None) -> List[Dict[str, Any]]:
+    documents = list_ready_documents(owner_email=owner_email)
     file_ids = [str(document["file_id"]) for document in documents if document.get("file_id")]
     metadata_rows = list_document_metadata_by_file_ids(file_ids)
     metadata_by_file_id = {
@@ -293,8 +302,8 @@ def match_score(match: Any) -> float:
 
 
 @app.get("/get-documents")
-def get_documents():
-    enriched_documents = ready_documents_with_metadata()
+def get_documents(owner_email: str | None = None):
+    enriched_documents = ready_documents_with_metadata(owner_email=owner_email)
     return {"documents": enriched_documents}
 
 
@@ -304,7 +313,7 @@ def semantic_document_search(request: DocumentSearchRequest):
     if not query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-    documents = ready_documents_with_metadata()
+    documents = ready_documents_with_metadata(request.owner_email)
     documents_by_file_id = {
         str(document.get("file_id")): document
         for document in documents
@@ -362,12 +371,16 @@ def semantic_document_search(request: DocumentSearchRequest):
 
 
 @app.get("/calender-events")
-def get_calender_events():
+def get_calender_events(owner_email: str | None = None):
+    documents = list_documents(owner_email=owner_email)
     metadata_rows = list_document_metadata()
+    allowed_file_ids = {str(document.get("file_id")) for document in documents if document.get("file_id")}
     events = []
 
     for metadata in metadata_rows:
         file_id = str(metadata.get("file_id") or "")
+        if allowed_file_ids and file_id not in allowed_file_ids:
+            continue
         file_heading = metadata.get("file_heading") or "Untitled Document"
 
         for index, item in enumerate(parse_timeline_json(metadata.get("timeline_json"))):
@@ -396,9 +409,9 @@ def get_calender_events():
 
 
 @app.get("/get-documents/{file_id}")
-def get_document(file_id: str):
+def get_document(file_id: str, owner_email: str | None = None):
     try:
-        file_url = get_document_file_url(file_id)
+        file_url = get_document_file_url(file_id, owner_email=owner_email)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid document id") from exc
 
@@ -438,7 +451,7 @@ def chat(request: ChatRequest):
     embedder = GeminiEmbedder()
     query_embedding = embedder.embed_text(query)
 
-    pinecone_document_names = resolve_pinecone_document_names(selected_documents)
+    pinecone_document_names = resolve_pinecone_document_names(selected_documents, owner_email=request.owner_email)
 
     retrieval_result = get_chunks_from_documents(
         document_names=pinecone_document_names,
@@ -472,3 +485,60 @@ def chat(request: ChatRequest):
             for match in matches
         ],
     }
+
+
+@app.get("/gmail/connect/start")
+def gmail_connect_start(owner_email: str = Query(..., min_length=3)):
+    try:
+        url = build_authorize_url(owner_email.strip().lower())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {"authorization_url": url}
+
+
+@app.get("/gmail/connect/callback")
+def gmail_connect_callback(code: str, state: str):
+    try:
+        state_data = verify_state(state)
+        owner_email = str(state_data["owner_email"]).strip().lower()
+        token_data = exchange_code_for_tokens(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    google_email = str(token_data.get("email") or owner_email).strip().lower()
+    clear_gmail_connections()
+    try:
+        stored = upsert_gmail_connection(
+            owner_email=owner_email,
+            google_email=google_email,
+            access_token=token_data.get("access_token", ""),
+            refresh_token=token_data.get("refresh_token", ""),
+            scopes=token_data.get("scope", ""),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    redirect_target = os.getenv("FRONTEND_GMAIL_CONNECT_REDIRECT", "http://localhost:3000/dashboard")
+    connection_name = stored.get("google_email") if isinstance(stored, dict) else google_email
+    return RedirectResponse(f"{redirect_target}?gmail_connected=1&owner_email={owner_email}&google_email={connection_name}")
+
+
+@app.get("/gmail/connect/status")
+def gmail_connect_status(owner_email: str = Query(..., min_length=3)):
+    connection = get_gmail_connection(owner_email.strip().lower())
+    return {"connected": bool(connection), "connection": connection}
+
+
+@app.delete("/gmail/connect")
+def gmail_disconnect(owner_email: str = Query(..., min_length=3)):
+    delete_gmail_connection(owner_email.strip().lower())
+    return {"ok": True}
+
+
+@app.delete("/gmail/connect/reset")
+def gmail_disconnect_all():
+    clear_gmail_connections()
+    return {"ok": True}

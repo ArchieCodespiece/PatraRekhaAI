@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getStoredAuthUser } from "../lib/supabaseAuth";
 import { DayPicker } from "react-day-picker";
 import { format, isSameDay } from "date-fns";
 import {
@@ -76,8 +77,10 @@ function normalizeApiEvent(event) {
     };
 }
 
-async function fetchCalendarEvents() {
-    const response = await fetch(`${API_BASE_URL}/calender-events`);
+async function fetchCalendarEvents(ownerEmail) {
+    const url = new URL(`${API_BASE_URL}/calender-events`);
+    if (ownerEmail) url.searchParams.set("owner_email", ownerEmail);
+    const response = await fetch(url);
     const data = await response.json();
 
     if (!response.ok) {
@@ -89,6 +92,7 @@ async function fetchCalendarEvents() {
 
 export default function Calendar() {
     const [selectedDate, setSelectedDate] = useState(new Date());
+    const [ownerEmail] = useState(() => getStoredAuthUser()?.email || "");
     const [events, setEvents] = useState([]);
     const [isEventsLoading, setIsEventsLoading] = useState(true);
     const [eventsError, setEventsError] = useState("");
@@ -101,7 +105,7 @@ export default function Calendar() {
     useEffect(() => {
         let isActive = true;
 
-        fetchCalendarEvents()
+        fetchCalendarEvents(ownerEmail)
             .then((nextEvents) => {
                 if (isActive) {
                     setEvents(nextEvents);
@@ -121,7 +125,7 @@ export default function Calendar() {
         return () => {
             isActive = false;
         };
-    }, []);
+    }, [ownerEmail]);
 
     const selectedDateEvents = selectedDate
         ? events.filter((evt) => isSameDay(new Date(evt.date), selectedDate))

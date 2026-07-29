@@ -2,6 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
 import {
     LayoutDashboard,
@@ -11,6 +13,9 @@ import {
     LogOut,
     ChevronRight,
 } from "lucide-react";
+
+import { clearStoredAuthUser, disconnectAllGmailConnections, disconnectGmailConnection, getStoredAuthUser } from "../lib/supabaseAuth";
+
 
 const links = [
     {
@@ -38,6 +43,19 @@ const links = [
 
 export default function Sidebar() {
     const pathname = usePathname();
+    const router = useRouter();
+    const [user, setUser] = useState(() => getStoredAuthUser());
+
+    useEffect(() => {
+        const onStorage = () => setUser(getStoredAuthUser());
+        window.addEventListener("storage", onStorage);
+        window.addEventListener("focus", onStorage);
+
+        return () => {
+            window.removeEventListener("storage", onStorage);
+            window.removeEventListener("focus", onStorage);
+        };
+    }, []);
 
     return (
         <aside className="w-64 h-screen bg-sidebar text-sidebar-foreground flex flex-col justify-between border-r border-sidebar-border p-4 select-none">
@@ -120,20 +138,30 @@ export default function Sidebar() {
                 <div className="flex items-center justify-between p-2 rounded-xl bg-[#CABDB2]/10 border border-[#CABDB2]/30">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-[#CABDB2]/20 flex items-center justify-center font-bold text-xs text-sidebar-foreground">
-                            AD
+                            {user?.displayName?.slice(0, 2)?.toUpperCase() || "GU"}
                         </div>
                         <div className="text-xs">
-                            <p className="font-semibold text-sidebar-foreground">Admin User</p>
-                            <p className="text-[#CABDB2] text-[10px]">admin@patrarekha.ai</p>
+                            <p className="font-semibold text-sidebar-foreground">{user?.displayName || "Guest"}</p>
+                            <p className="text-[#CABDB2] text-[10px] break-all">{user?.email || "Sign in with Google"}</p>
                         </div>
                     </div>
-                    <Link
-                        href="/"
+                    <button
+                        type="button"
                         title="Logout"
+                        onClick={async () => {
+                            try {
+                                await disconnectAllGmailConnections();
+                            } catch {
+                                // If reset fails, still clear local auth so the user can log out.
+                            }
+                            clearStoredAuthUser();
+                            setUser(null);
+                            router.push("/");
+                        }}
                         className="text-[#CABDB2] hover:text-primary transition-colors p-1.5 rounded-lg hover:bg-[#CABDB2]/20"
                     >
                         <LogOut size={16} />
-                    </Link>
+                    </button>
                 </div>
             </div>
         </aside>

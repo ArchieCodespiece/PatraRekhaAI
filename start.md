@@ -32,8 +32,7 @@ If the OCR stack needs extra packages on your machine, install them in the root 
 Create these files if they do not already exist:
 
 ```text
-backend\.env
-.env
+backend\.env.env
 ```
 
 Put the API keys and settings from the pasted note into the matching file.

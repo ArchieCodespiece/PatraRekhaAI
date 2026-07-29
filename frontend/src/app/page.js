@@ -135,7 +135,7 @@ export default function LandingPage() {
                     items={[
                         {
                             label: "Login",
-                            href: "/dashboard",
+                            href: "/auth",
                             icon: <ArrowRight size={16} />,
                         },
                     ]}
@@ -177,7 +177,7 @@ export default function LandingPage() {
                     <FadeInOnScroll delay={300}>
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                             <Link
-                                href="/dashboard"
+                                href="/auth"
                                 className="group flex items-center gap-2.5 px-8 py-4 rounded-2xl bg-[#CA8A78] text-[#FFFBF0] font-bold text-base transition-all duration-300 shadow-xl shadow-[#CA8A78]/25 hover:shadow-2xl hover:shadow-[#CA8A78]/30 hover:scale-[1.02] active:scale-95"
                             >
                                 <Image
@@ -443,7 +443,7 @@ export default function LandingPage() {
                                 Join organizations already using PatraRekhaAI to unlock intelligence from their documents.
                             </p>
                             <Link
-                                href="/dashboard"
+                                href="/auth"
                                 className="group inline-flex items-center gap-2.5 px-8 py-4 rounded-2xl bg-[#CA8A78] text-[#FFFBF0] font-bold text-base transition-all duration-300 shadow-xl shadow-[#CA8A78]/30 hover:shadow-2xl hover:shadow-[#CA8A78]/40 hover:scale-[1.02] active:scale-95"
                             >
                                 Start for Free
