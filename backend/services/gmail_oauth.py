@@ -27,7 +27,7 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "")
 GMAIL_OAUTH_STATE_SECRET = os.getenv("GMAIL_OAUTH_STATE_SECRET", os.getenv("SUPABASE_SERVICE_ROLE_KEY", "dev-secret"))
 GMAIL_OAUTH_SCOPES = os.getenv(
     "GMAIL_OAUTH_SCOPES",
-    "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+    "openid email profile https://www.googleapis.com/auth/gmail.modify",
 )
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"

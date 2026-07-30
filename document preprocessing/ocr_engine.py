@@ -1,6 +1,7 @@
-
-
-from paddleocr import PaddleOCR
+# PaddleOCR is imported lazily inside get_ocr() to avoid crashing at startup
+# when the `regex._regex` DLL is blocked by Windows Application Control policy.
+# PDFs whose text can be extracted directly (pdfplumber Phase 1) never hit this
+# import path and will still be processed successfully.
 
 try:
     from .config import OCR_LANGUAGE, MIN_OCR_CONFIDENCE
@@ -17,15 +18,24 @@ _ocr = None
 
 
 def get_ocr():
-    """
-    Returns a singleton PaddleOCR instance.
-    """
+    """Return a singleton PaddleOCR instance, importing lazily on first call."""
     global _ocr
 
     if _ocr is None:
+        # Lazy import – only triggered when OCR is actually needed.
+        # This avoids the Windows AppControl DLL block at process startup.
+        try:
+            from paddleocr import PaddleOCR  # noqa: PLC0415
+        except ImportError as exc:
+            raise RuntimeError(
+                "PaddleOCR is not installed or its DLL is blocked by Windows "
+                "Application Control. Only PDFs with directly extractable text "
+                "can be processed in this environment."
+            ) from exc
+
         _ocr = PaddleOCR(
             use_textline_orientation=True,
-            lang=OCR_LANGUAGE
+            lang=OCR_LANGUAGE,
         )
 
     return _ocr

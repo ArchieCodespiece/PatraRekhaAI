@@ -1,6 +1,6 @@
 # Email Ingestion
 
-This Python service polls an IMAP mailbox for unread messages, uploads every attachment to the `file_storage` Supabase bucket, and inserts a row in the `files` table. Each stored row is tagged with the mailbox owner email so document lists stay isolated per account.
+This Python service polls connected Gmail accounts via the Gmail API for unread inbox messages, uploads every attachment to the `file_storage` Supabase bucket, and inserts a row in the `files` table. Each stored row is tagged with the mailbox owner email so document lists stay isolated per account.
 
 ## Run locally
 

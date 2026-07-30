@@ -128,6 +128,8 @@ def process_pdf(
 
     print("\nRunning PaddleOCR...")
 
+    _ocr_unavailable = False  # set to True after first DLL-blocked failure
+
     for batch_start in range(0, len(needs_ocr), batch_size):
 
         batch_pages = needs_ocr[
@@ -162,7 +164,20 @@ def process_pdf(
 
             processed = preprocess_image(img)
 
-            text, tables = run_paddle_ocr(processed)
+            if _ocr_unavailable:
+                print(f"  ⚠ Skipping page {page_number}: PaddleOCR unavailable (DLL blocked)")
+                text, tables = "", []
+            else:
+                try:
+                    text, tables = run_paddle_ocr(processed)
+                except (RuntimeError, ImportError) as ocr_err:
+                    print(f"  ⚠ PaddleOCR unavailable on page {page_number}: {ocr_err}")
+                    print(
+                        "  ⚠ This is usually caused by a Windows AppControl policy blocking the "
+                        "regex DLL. Pages requiring OCR will be stored with empty text."
+                    )
+                    _ocr_unavailable = True
+                    text, tables = "", []
 
             text = clean_text(text)
 

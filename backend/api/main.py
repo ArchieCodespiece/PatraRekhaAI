@@ -50,6 +50,21 @@ FILE_ID_PATTERN = re.compile(
 )
 
 
+from urllib.request import Request, urlopen
+import threading
+
+def trigger_gmail_sync_non_blocking():
+    def run_sync():
+        try:
+            req = Request("http://127.0.0.1:8002/sync", method="POST")
+            with urlopen(req, timeout=5) as resp:
+                pass
+        except Exception:
+            pass
+    threading.Thread(target=run_sync, daemon=True).start()
+
+
+
 @asynccontextmanager
 async def lifespan(_app):
     await document_queue.start()
@@ -303,6 +318,7 @@ def match_score(match: Any) -> float:
 
 @app.get("/get-documents")
 def get_documents(owner_email: str | None = None):
+    trigger_gmail_sync_non_blocking()
     enriched_documents = ready_documents_with_metadata(owner_email=owner_email)
     return {"documents": enriched_documents}
 
@@ -509,7 +525,7 @@ def gmail_connect_callback(code: str, state: str):
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     google_email = str(token_data.get("email") or owner_email).strip().lower()
-    clear_gmail_connections()
+    clear_gmail_connections(owner_email)
     try:
         stored = upsert_gmail_connection(
             owner_email=owner_email,
@@ -523,6 +539,7 @@ def gmail_connect_callback(code: str, state: str):
 
     redirect_target = os.getenv("FRONTEND_GMAIL_CONNECT_REDIRECT", "http://localhost:3000/dashboard")
     connection_name = stored.get("google_email") if isinstance(stored, dict) else google_email
+    trigger_gmail_sync_non_blocking()
     return RedirectResponse(f"{redirect_target}?gmail_connected=1&owner_email={owner_email}&google_email={connection_name}")
 
 
