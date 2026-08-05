@@ -81,11 +81,17 @@ def pipeline_python():
     if configured:
         return configured
 
-    if DEFAULT_WINDOWS_PIPELINE_PYTHON.exists():
-        return str(DEFAULT_WINDOWS_PIPELINE_PYTHON)
+    # Prefer the platform-appropriate venv Python executable.
+    # On non-Windows platforms (Linux, macOS, WSL), the Unix-style
+    # path (.venv/bin/python) must be used; the Windows-style path
+    # (.venv/Scripts/python.exe) is not executable from those environments.
+    if sys.platform == "win32":
+        candidate = DEFAULT_WINDOWS_PIPELINE_PYTHON
+    else:
+        candidate = DEFAULT_PIPELINE_PYTHON
 
-    if DEFAULT_PIPELINE_PYTHON.exists():
-        return str(DEFAULT_PIPELINE_PYTHON)
+    if candidate.exists():
+        return str(candidate)
 
     return sys.executable
 
