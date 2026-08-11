@@ -23,8 +23,8 @@ class VectorStorePipeline:
     End-to-end vector store pipeline.
     """
 
-    def __init__(self):
-        self.store = PineconeStore()
+    def __init__(self, namespace: str | None = None):
+        self.store = PineconeStore(namespace=namespace)
 
     # ------------------------------------------------------------------
     # Upload
@@ -33,6 +33,7 @@ class VectorStorePipeline:
     def upload(
         self,
         embedding_result: EmbeddingResult,
+        namespace: str | None = None,
     ) -> None:
         """
         Upload all embedded chunks to Pinecone.
@@ -40,10 +41,15 @@ class VectorStorePipeline:
         Parameters
         ----------
         embedding_result : EmbeddingResult
+        namespace : str | None
+            Per-user namespace. Overrides the namespace set at construction
+            time.  When ``None`` and no namespace was set on the store, the
+            vectors are upserted to the default (empty) namespace.
         """
 
         self.store.upsert(
-            embedding_result.embedded_chunks
+            embedding_result.embedded_chunks,
+            namespace=namespace,
         )
 
     # ------------------------------------------------------------------
@@ -54,6 +60,7 @@ class VectorStorePipeline:
         self,
         embedding: List[float],
         top_k: int = 5,
+        namespace: str | None = None,
     ):
         """
         Search for similar vectors.
@@ -62,9 +69,10 @@ class VectorStorePipeline:
         ----------
         embedding : List[float]
             Query embedding.
-
         top_k : int
             Number of nearest neighbours.
+        namespace : str | None
+            Per-user namespace to restrict the search.
 
         Returns
         -------
@@ -74,6 +82,7 @@ class VectorStorePipeline:
         return self.store.query(
             embedding=embedding,
             top_k=top_k,
+            namespace=namespace,
         )
 
     # ------------------------------------------------------------------
@@ -83,22 +92,24 @@ class VectorStorePipeline:
     def delete_document(
         self,
         document_id: str,
+        namespace: str | None = None,
     ) -> None:
         """
         Delete all vectors belonging to a document.
         """
 
-        self.store.delete_document(document_id)
+        self.store.delete_document(document_id, namespace=namespace)
 
     def delete(
         self,
         ids: List[str],
+        namespace: str | None = None,
     ) -> None:
         """
         Delete vectors by IDs.
         """
 
-        self.store.delete(ids)
+        self.store.delete(ids, namespace=namespace)
 
     # ------------------------------------------------------------------
     # Information

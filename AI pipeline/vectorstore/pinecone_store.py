@@ -21,6 +21,7 @@ from .config import (
     PINECONE_REGION,
     UPSERT_BATCH_SIZE,
     VECTOR_DIMENSION,
+    USE_NAMESPACES,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -47,9 +48,10 @@ class PineconeStore:
     Wrapper around the Pinecone vector database.
     """
 
-    def __init__(self):
+    def __init__(self, namespace: str | None = None):
 
         self.pc = Pinecone(api_key=PINECONE_API_KEY)
+        self.namespace = namespace
 
         self._create_index_if_missing()
 
@@ -86,10 +88,19 @@ class PineconeStore:
     def upsert(
         self,
         embedded_chunks: List[EmbeddedChunk],
+        namespace: str | None = None,
     ) -> None:
         """
         Upload embedded chunks into Pinecone.
+
+        When ``namespace`` is provided (or the store was constructed with one),
+        vectors are upserted into that Pinecone namespace so that users' vectors
+        are logically partitioned within the shared index.
         """
+
+        ns = namespace if namespace is not None else self.namespace
+        if not USE_NAMESPACES or not ns:
+            ns = None
 
         vectors = []
         file_ids = set()
@@ -123,7 +134,7 @@ class PineconeStore:
 
             batch = vectors[i : i + UPSERT_BATCH_SIZE]
 
-            self.index.upsert(vectors=batch)
+            self.index.upsert(vectors=batch, namespace=ns)
 
         mark_files_vectored(file_ids)
 
@@ -135,15 +146,24 @@ class PineconeStore:
         self,
         embedding: List[float],
         top_k: int = 5,
+        namespace: str | None = None,
     ):
         """
         Search similar vectors.
+
+        When ``namespace`` is provided (or the store was constructed with one),
+        the query is restricted to that Pinecone namespace.
         """
+
+        ns = namespace if namespace is not None else self.namespace
+        if not USE_NAMESPACES or not ns:
+            ns = None
 
         return self.index.query(
             vector=embedding,
             top_k=top_k,
             include_metadata=True,
+            namespace=ns,
         )
 
     # ------------------------------------------------------------------
@@ -153,25 +173,36 @@ class PineconeStore:
     def delete(
         self,
         ids: List[str],
+        namespace: str | None = None,
     ) -> None:
         """
         Delete vectors by ID.
         """
 
-        self.index.delete(ids=ids)
+        ns = namespace if namespace is not None else self.namespace
+        if not USE_NAMESPACES or not ns:
+            ns = None
+
+        self.index.delete(ids=ids, namespace=ns)
 
     def delete_document(
         self,
         document_id: str,
+        namespace: str | None = None,
     ) -> None:
         """
         Delete all vectors belonging to a document.
         """
 
+        ns = namespace if namespace is not None else self.namespace
+        if not USE_NAMESPACES or not ns:
+            ns = None
+
         self.index.delete(
             filter={
                 "document_id": document_id,
-            }
+            },
+            namespace=ns,
         )
 
     # ------------------------------------------------------------------

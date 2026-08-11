@@ -6,13 +6,45 @@ Modify paths and parameters here only.
 """
 
 import os
+import sys
+import tempfile
 
 # ==========================================================
 # PATHS
 # ==========================================================
 
 # Poppler installation path (required by pdf2image on Windows)
-POPPLER_PATH = r"/usr/bin"
+if sys.platform == "win32":
+    POPPLER_PATH = r"D:\Patrarekhav3\PatraRekhaAI\tools\poppler\Library\bin"
+else:
+    POPPLER_PATH = "/usr/bin"
+
+# Base directory for per-user checkpoint files.
+# Each checkpoint file is namespaced by owner_email and file_id to avoid
+# lock conflicts when multiple pipelines run concurrently.
+CHECKPOINT_DIR = os.path.join(
+    os.getenv("OCR_CHECKPOINT_DIR", tempfile.gettempdir()),
+    "patrarekha-checkpoints",
+)
+
+
+def get_checkpoint_path(file_id: str | None = None, owner_email: str | None = None) -> str:
+    """Build a unique checkpoint path per user + document.
+
+    Falls back to the legacy relative path when neither ``file_id`` nor
+    ``owner_email`` is provided (backward compatibility with ad-hoc CLI usage).
+    """
+    if not file_id:
+        # Legacy behaviour: relative checkpoint in CWD
+        return "paddle2_checkpoint.json"
+
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+    parts = []
+    if owner_email:
+        safe_owner = owner_email.replace("@", "_at_").replace(".", "_dot_").replace("/", "_")
+        parts.append(safe_owner)
+    parts.append(f"{file_id}_checkpoint.json")
+    return os.path.join(CHECKPOINT_DIR, *parts)
 
 # ==========================================================
 # OCR SETTINGS

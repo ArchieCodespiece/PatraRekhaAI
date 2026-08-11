@@ -200,3 +200,14 @@ ingestion/*.json
 **/.env
 AI pipeline/.env
 **/.env.*
+
+.claude
+.agents
+.opencode
+
+/sql documentation/
+/tools/
+
+startlinux.md
+startwindows.md
+startwindows4me.md

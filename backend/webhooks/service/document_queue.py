@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 from contextlib import suppress
+from time import monotonic
 
 from webhooks.service.processor import process_document
 
@@ -29,11 +30,13 @@ class DocumentQueue:
         self._started = False
         self._processed = 0
         self._failed = 0
+        self._in_flight: set[str] = set()
+        self._completed_ttl_seconds = _env_int("WEBHOOK_QUEUE_COMPLETED_TTL_SECONDS", 60)
+        self._completed: dict[str, float] = {}
 
     async def start(self):
         if self._started:
             return
-
         self._started = True
         self._workers = [
             asyncio.create_task(self._worker(index + 1))
@@ -44,25 +47,39 @@ class DocumentQueue:
     async def stop(self):
         if not self._started:
             return
-
         self._started = False
         for worker in self._workers:
             worker.cancel()
-
         for worker in self._workers:
             with suppress(asyncio.CancelledError):
                 await worker
-
         self._workers = []
 
+    def _prune_completed(self):
+        now = monotonic()
+        expired = [fid for fid, expiry in self._completed.items() if expiry <= now]
+        for fid in expired:
+            del self._completed[fid]
+
     def enqueue(self, document, attempt=1):
+        file_id = str(document.get("file_id") or "")
+        if not file_id:
+            return False
+        if file_id in self._in_flight:
+            logger.debug("Skipping duplicate webhook for in-flight document %s", file_id)
+            return True
+        self._prune_completed()
+        if file_id in self._completed:
+            logger.debug("Skipping duplicate webhook for recently completed document %s", file_id)
+            return True
         if self._queue.full():
             return False
-
+        self._in_flight.add(file_id)
         self._queue.put_nowait({"document": document, "attempt": attempt})
         return True
 
     def status(self):
+        self._prune_completed()
         return {
             "queued": self._queue.qsize(),
             "max_size": self.max_size,
@@ -83,8 +100,7 @@ class DocumentQueue:
     async def _handle_job(self, job, worker_id):
         document = job["document"]
         attempt = job["attempt"]
-        file_id = document.get("file_id")
-
+        file_id = str(document.get("file_id") or "")
         try:
             await process_document(document)
             self._processed += 1
@@ -93,13 +109,19 @@ class DocumentQueue:
             if attempt >= self.max_attempts:
                 self._failed += 1
                 logger.exception("Document %s failed after %s attempt(s)", file_id, attempt)
+                self._in_flight.discard(file_id)
+                self._completed[file_id] = monotonic() + self._completed_ttl_seconds
                 return
-
             logger.exception("Document %s failed on attempt %s; retrying", file_id, attempt)
             await asyncio.sleep(self.retry_delay_seconds)
             if not self.enqueue(document, attempt=attempt + 1):
                 self._failed += 1
                 logger.error("Document %s retry dropped because the queue is full", file_id)
+                self._in_flight.discard(file_id)
+                self._completed[file_id] = monotonic() + self._completed_ttl_seconds
+            return
+        self._in_flight.discard(file_id)
+        self._completed[file_id] = monotonic() + self._completed_ttl_seconds
 
 
 document_queue = DocumentQueue()

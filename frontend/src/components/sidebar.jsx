@@ -14,7 +14,7 @@ import {
     ChevronRight,
 } from "lucide-react";
 
-import { clearStoredAuthUser, disconnectAllGmailConnections, disconnectGmailConnection, getStoredAuthUser } from "../lib/supabaseAuth";
+import { clearStoredAuthUser, disconnectGmailConnection, getStoredAuthUser } from "../lib/supabaseAuth";
 
 
 const links = [
@@ -44,14 +44,19 @@ const links = [
 export default function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
-    const [user, setUser] = useState(() => getStoredAuthUser());
+    const [user, setUser] = useState(null);
 
     useEffect(() => {
         const onStorage = () => setUser(getStoredAuthUser());
         window.addEventListener("storage", onStorage);
         window.addEventListener("focus", onStorage);
 
+        const timeoutId = setTimeout(() => {
+            setUser(getStoredAuthUser());
+        }, 0);
+
         return () => {
+            clearTimeout(timeoutId);
             window.removeEventListener("storage", onStorage);
             window.removeEventListener("focus", onStorage);
         };
@@ -150,9 +155,9 @@ export default function Sidebar() {
                         title="Logout"
                         onClick={async () => {
                             try {
-                                await disconnectAllGmailConnections();
+                                await disconnectGmailConnection(user?.email);
                             } catch {
-                                // If reset fails, still clear local auth so the user can log out.
+                                // If disconnect fails, still clear local auth so the user can log out.
                             }
                             clearStoredAuthUser();
                             setUser(null);

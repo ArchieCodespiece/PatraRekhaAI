@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { getStoredAuthUser } from "../lib/supabaseAuth";
+
 import {
     FileText,
     Send,
@@ -9,572 +9,2214 @@ import {
     User,
     CheckSquare,
     Square,
-    Sparkles,
     Paperclip,
     ChevronDown,
+    ChevronLeft,
+    ChevronRight,
     X,
     Search,
     Loader2,
     MessageSquare,
     AlertCircle,
     Upload,
+    Plus,
+    Trash2,
 } from "lucide-react";
 
+import {
+    fetchDocuments,
+    authenticatedFetch,
+} from "../lib/supabaseAuth";
+
+
 const MAX_SELECTION = 5;
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8001";
+
+
+/* ========================================================================
+   HELPERS
+   ======================================================================== */
 
 function cleanFilename(filename) {
-    return (filename || "Untitled.pdf").replace(/^\w{12}-/, "");
+    return (filename || "Untitled.pdf").replace(
+        /^\w{12}-/,
+        ""
+    );
 }
 
+
 function filenameStem(filename) {
-    return cleanFilename(filename).replace(/\.pdf$/i, "");
+    return cleanFilename(filename).replace(
+        /\.pdf$/i,
+        ""
+    );
 }
+
 
 function formatBytes(bytes) {
     const size = Number(bytes || 0);
-    if (!size) return "Unknown size";
 
-    const units = ["B", "KB", "MB", "GB"];
-    const index = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
-    return `${(size / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
-}
-
-function formatDate(value) {
-    if (!value) return "Unknown date";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "Unknown date";
-    return date.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-    });
-}
-
-function normalizeDocument(document) {
-    const name = filenameStem(document.filename);
-
-    return {
-        id: String(document.file_id),
-        name,
-        label: document.file_heading || name,
-        filename: cleanFilename(document.filename),
-        size: formatBytes(document.file_size),
-        uploaded: formatDate(document.uploaded_at || document.created_at),
-    };
-}
-
-async function fetchChatDocuments(ownerEmail) {
-    const url = new URL(`${API_BASE_URL}/get-documents`);
-    if (ownerEmail) url.searchParams.set("owner_email", ownerEmail);
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (!response.ok) {
-        throw new Error(data?.detail || "Unable to load documents.");
+    if (!size) {
+        return "Unknown size";
     }
 
-    return Array.isArray(data.documents) ? data.documents.map(normalizeDocument) : [];
-}
+    const units = [
+        "B",
+        "KB",
+        "MB",
+        "GB",
+    ];
 
-export default function ChatWithPDF() {
-    const [selectedPDFs, setSelectedPDFs] = useState(new Set());
-    const [messages, setMessages] = useState([]);
-    const [inputValue, setInputValue] = useState("");
-    const [isLoading, setIsLoading] = useState(false);
-    const [isDocumentsLoading, setIsDocumentsLoading] = useState(true);
-    const [documentsError, setDocumentsError] = useState("");
-    const [documents, setDocuments] = useState([]);
-    const [searchQuery, setSearchQuery] = useState("");
-    const [isPanelOpen, setIsPanelOpen] = useState(true);
-    const [ownerEmail] = useState(() => getStoredAuthUser()?.email || "");
-
-    const messagesEndRef = useRef(null);
-    const inputRef = useRef(null);
-
-    const filteredPDFs = documents.filter((pdf) =>
-        `${pdf.label} ${pdf.name} ${pdf.filename}`.toLowerCase().includes(searchQuery.toLowerCase())
+    const index = Math.min(
+        Math.floor(
+            Math.log(size) /
+            Math.log(1024)
+        ),
+        units.length - 1
     );
 
-    const togglePDF = (id) => {
-        setSelectedPDFs((prev) => {
-            const next = new Set(prev);
-            if (next.has(id)) {
-                next.delete(id);
-                return next;
-            }
+    return `${(
+        size /
+        1024 ** index
+    ).toFixed(
+        index === 0 ? 0 : 1
+    )} ${units[index]}`;
+}
 
-            if (next.size >= MAX_SELECTION) {
-                return prev;
-            }
 
-            next.add(id);
-            return next;
-        });
-    };
+function formatDate(value) {
+    if (!value) {
+        return "Unknown date";
+    }
 
-    const toggleAllPDFs = () => {
-        const selectableIds = documents.slice(0, MAX_SELECTION).map((pdf) => pdf.id);
-        const selectedSelectableCount = selectableIds.filter((id) => selectedPDFs.has(id)).length;
+    const date = new Date(value);
 
-        if (selectedSelectableCount === selectableIds.length) {
-            setSelectedPDFs(new Set());
-        } else {
-            setSelectedPDFs(new Set(selectableIds));
+    if (
+        Number.isNaN(
+            date.getTime()
+        )
+    ) {
+        return "Unknown date";
+    }
+
+    return date.toLocaleDateString(
+        "en-US",
+        {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
         }
-    };
+    );
+}
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+
+function formatMessageTime(value) {
+    if (!value) {
+        return "";
+    }
+
+    const date = new Date(value);
+
+    if (
+        Number.isNaN(
+            date.getTime()
+        )
+    ) {
+        return "";
+    }
+
+    return date.toLocaleTimeString(
+        [],
+        {
+            hour: "2-digit",
+            minute: "2-digit",
+        }
+    );
+}
+
+
+function normalizeDocument(document) {
+    const name = filenameStem(
+        document.filename
+    );
+
+    return {
+        id: String(
+            document.file_id
+        ),
+
+        name,
+
+        label:
+            document.file_heading ||
+            name,
+
+        filename:
+            cleanFilename(
+                document.filename
+            ),
+
+        size:
+            formatBytes(
+                document.file_size
+            ),
+
+        uploaded:
+            formatDate(
+                document.uploaded_at ||
+                document.created_at
+            ),
     };
+}
+
+
+function normalizeMessage(message) {
+    return {
+        id:
+            message.id,
+
+        role:
+            message.role,
+
+        content:
+            message.content,
+
+        timestamp:
+            new Date(
+                message.created_at
+            ),
+
+        sources:
+            Array.isArray(
+                message.sources
+            )
+                ? message.sources
+                : [],
+    };
+}
+
+
+/* ========================================================================
+   COMPONENT
+   ======================================================================== */
+
+export default function ChatWithPDF() {
+
+    /* --------------------------------------------------------------------
+       Documents
+    -------------------------------------------------------------------- */
+
+    const [
+        selectedPDFs,
+        setSelectedPDFs,
+    ] = useState(
+        new Set()
+    );
+
+    const [
+        documents,
+        setDocuments,
+    ] = useState([]);
+
+    const [
+        isDocumentsLoading,
+        setIsDocumentsLoading,
+    ] = useState(true);
+
+    const [
+        documentsError,
+        setDocumentsError,
+    ] = useState("");
+
+    const [
+        searchQuery,
+        setSearchQuery,
+    ] = useState("");
+
+    const [
+        isPanelOpen,
+        setIsPanelOpen,
+    ] = useState(true);
+
+
+    /* --------------------------------------------------------------------
+       Chat
+    -------------------------------------------------------------------- */
+
+    const [
+        messages,
+        setMessages,
+    ] = useState([]);
+
+    const [
+        inputValue,
+        setInputValue,
+    ] = useState("");
+
+    const [
+        isLoading,
+        setIsLoading,
+    ] = useState(false);
+
+
+    /* --------------------------------------------------------------------
+       Conversation history
+    -------------------------------------------------------------------- */
+
+    const [
+        conversations,
+        setConversations,
+    ] = useState([]);
+
+    const [
+        currentConversationId,
+        setCurrentConversationId,
+    ] = useState(null);
+
+    const [
+        isHistoryLoading,
+        setIsHistoryLoading,
+    ] = useState(false);
+
+    const [
+        isHistoryOpen,
+        setIsHistoryOpen,
+    ] = useState(true);
+
+
+    /* --------------------------------------------------------------------
+       Refs
+    -------------------------------------------------------------------- */
+
+    const messagesEndRef =
+        useRef(null);
+
+    const inputRef =
+        useRef(null);
+
+
+    /* ====================================================================
+       FILTER DOCUMENTS
+       ==================================================================== */
+
+    const filteredPDFs =
+        documents.filter(
+            (pdf) =>
+                `${pdf.label} ${pdf.name} ${pdf.filename}`
+                    .toLowerCase()
+                    .includes(
+                        searchQuery.toLowerCase()
+                    )
+        );
+
+
+    /* ====================================================================
+       LOAD DOCUMENTS
+       ==================================================================== */
 
     useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
 
-    useEffect(() => {
         let isActive = true;
 
-        fetchChatDocuments(ownerEmail)
-            .then((nextDocuments) => {
+        async function loadDocuments() {
+
+            try {
+
+                setIsDocumentsLoading(
+                    true
+                );
+
+                setDocumentsError("");
+
+                const data =
+                    await fetchDocuments();
+
+                const nextDocuments =
+                    Array.isArray(
+                        data?.documents
+                    )
+                        ? data.documents.map(
+                            normalizeDocument
+                        )
+                        : [];
+
                 if (isActive) {
-                    setDocuments(nextDocuments);
+                    setDocuments(
+                        nextDocuments
+                    );
                 }
-            })
-            .catch((error) => {
+
+            } catch (error) {
+
                 if (isActive) {
-                    setDocumentsError(error.message || "Unable to load documents.");
+
+                    setDocumentsError(
+                        error?.message ||
+                        "Unable to load documents."
+                    );
+
                 }
-            })
-            .finally(() => {
+
+            } finally {
+
                 if (isActive) {
-                    setIsDocumentsLoading(false);
+
+                    setIsDocumentsLoading(
+                        false
+                    );
+
                 }
-            });
+
+            }
+        }
+
+        loadDocuments();
 
         return () => {
             isActive = false;
         };
-    }, [ownerEmail]);
 
-    const handleSend = async (e) => {
-        e?.preventDefault();
-        const text = inputValue.trim();
-        if (!text || selectedPDFs.size === 0 || isLoading) return;
+    }, []);
 
-        const userMsg = {
-            id: Date.now(),
-            role: "user",
-            content: text,
-            timestamp: new Date(),
+
+    /* ====================================================================
+       LOAD CONVERSATIONS
+       ==================================================================== */
+
+    const loadConversations =
+        async () => {
+
+            try {
+
+                setIsHistoryLoading(
+                    true
+                );
+
+                const response =
+                    await authenticatedFetch(
+                        "/conversations",
+                        {
+                            method: "GET",
+                        }
+                    );
+
+                const data =
+                    await response.json();
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        data?.detail ||
+                        "Unable to load chat history."
+                    );
+
+                }
+
+                setConversations(
+                    Array.isArray(
+                        data?.conversations
+                    )
+                        ? data.conversations
+                        : []
+                );
+
+            } catch (error) {
+
+                console.error(
+                    "Conversation history error:",
+                    error
+                );
+
+            } finally {
+
+                setIsHistoryLoading(
+                    false
+                );
+
+            }
         };
-        setMessages((prev) => [...prev, userMsg]);
+
+
+    useEffect(() => {
+
+        loadConversations();
+
+    }, []);
+
+
+    /* ====================================================================
+       SCROLL CHAT
+       ==================================================================== */
+
+    useEffect(() => {
+
+        messagesEndRef.current?.scrollIntoView(
+            {
+                behavior: "smooth",
+            }
+        );
+
+    }, [messages]);
+
+
+    /* ====================================================================
+       SELECT PDF
+       ==================================================================== */
+
+    const togglePDF = (id) => {
+
+        setSelectedPDFs(
+            (previous) => {
+
+                const next =
+                    new Set(previous);
+
+                if (
+                    next.has(id)
+                ) {
+
+                    next.delete(id);
+
+                    return next;
+                }
+
+                if (
+                    next.size >=
+                    MAX_SELECTION
+                ) {
+
+                    return previous;
+                }
+
+                next.add(id);
+
+                return next;
+            }
+        );
+    };
+
+
+    /* ====================================================================
+       SELECT ALL
+       ==================================================================== */
+
+    const toggleAllPDFs = () => {
+
+        const selectableIds =
+            documents
+                .slice(
+                    0,
+                    MAX_SELECTION
+                )
+                .map(
+                    (pdf) => pdf.id
+                );
+
+        const selectedCount =
+            selectableIds.filter(
+                (id) =>
+                    selectedPDFs.has(
+                        id
+                    )
+            ).length;
+
+        if (
+            selectedCount ===
+            selectableIds.length
+        ) {
+
+            setSelectedPDFs(
+                new Set()
+            );
+
+        } else {
+
+            setSelectedPDFs(
+                new Set(
+                    selectableIds
+                )
+            );
+
+        }
+    };
+
+
+    /* ====================================================================
+       NEW CHAT
+       ==================================================================== */
+
+    const handleNewChat = () => {
+
+        setMessages([]);
+
         setInputValue("");
-        setIsLoading(true);
 
-        try {
-            const selectedDocumentNames = [...selectedPDFs]
-                .map((id) => documents.find((pdf) => pdf.id === id)?.name)
-                .filter(Boolean);
+        setCurrentConversationId(
+            null
+        );
 
-            const response = await fetch(`${API_BASE_URL}/chat`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    query: text,
-                    selected_documents: selectedDocumentNames,
-                    owner_email: ownerEmail,
-                }),
-            });
+        setSelectedPDFs(
+            new Set()
+        );
 
-            const data = await response.json();
+        inputRef.current?.focus();
+    };
 
-            if (!response.ok) {
-                throw new Error(data?.detail || "Unable to get a response from the server.");
+
+    /* ====================================================================
+       OPEN CONVERSATION
+       ==================================================================== */
+
+    const openConversation =
+        async (
+            conversationId
+        ) => {
+
+            if (
+                conversationId ===
+                currentConversationId
+            ) {
+                return;
             }
 
-            const aiMsg = {
-                id: Date.now() + 1,
-                role: "assistant",
-                content: data.answer || "I couldn't generate a response.",
-                timestamp: new Date(),
-                sources: (data.matches || [])
-                    .map((match) => match?.metadata?.document_name)
-                    .filter(Boolean),
+            try {
+
+                setIsHistoryLoading(
+                    true
+                );
+
+                const response =
+                    await authenticatedFetch(
+                        `/conversations/${conversationId}`,
+                        {
+                            method: "GET",
+                        }
+                    );
+
+                const data =
+                    await response.json();
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        data?.detail ||
+                        "Unable to open conversation."
+                    );
+
+                }
+
+                const conversation =
+                    data?.conversation;
+
+                const loadedMessages =
+                    Array.isArray(
+                        data?.messages
+                    )
+                        ? data.messages.map(
+                            normalizeMessage
+                        )
+                        : [];
+
+                setCurrentConversationId(
+                    conversation?.id ||
+                    conversationId
+                );
+
+                setMessages(
+                    loadedMessages
+                );
+
+                /*
+                 * Restore selected PDFs.
+                 *
+                 * We stored document names,
+                 * not IDs.
+                 *
+                 * Match them against the
+                 * currently loaded documents.
+                 */
+
+                const storedDocuments =
+                    Array.isArray(
+                        conversation?.selected_documents
+                    )
+                        ? conversation.selected_documents
+                        : [];
+
+                const matchingIds =
+                    documents
+                        .filter(
+                            (document) =>
+                                storedDocuments.includes(
+                                    document.name
+                                ) ||
+                                storedDocuments.includes(
+                                    document.filename
+                                ) ||
+                                storedDocuments.includes(
+                                    document.label
+                                )
+                        )
+                        .slice(
+                            0,
+                            MAX_SELECTION
+                        )
+                        .map(
+                            (document) =>
+                                document.id
+                        );
+
+                setSelectedPDFs(
+                    new Set(
+                        matchingIds
+                    )
+                );
+
+                setInputValue("");
+
+            } catch (error) {
+
+                console.error(
+                    "Open conversation error:",
+                    error
+                );
+
+            } finally {
+
+                setIsHistoryLoading(
+                    false
+                );
+
+                inputRef.current?.focus();
+            }
+        };
+
+
+    /* ====================================================================
+       DELETE CONVERSATION
+       ==================================================================== */
+
+    const deleteConversation =
+        async (
+            event,
+            conversationId
+        ) => {
+
+            event.stopPropagation();
+
+            try {
+
+                const response =
+                    await authenticatedFetch(
+                        `/conversations/${conversationId}`,
+                        {
+                            method: "DELETE",
+                        }
+                    );
+
+                const data =
+                    await response.json();
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        data?.detail ||
+                        "Unable to delete conversation."
+                    );
+
+                }
+
+                setConversations(
+                    (previous) =>
+                        previous.filter(
+                            (conversation) =>
+                                conversation.id !==
+                                conversationId
+                        )
+                );
+
+                if (
+                    currentConversationId ===
+                    conversationId
+                ) {
+
+                    handleNewChat();
+                }
+
+            } catch (error) {
+
+                console.error(
+                    "Delete conversation error:",
+                    error
+                );
+            }
+        };
+
+
+    /* ====================================================================
+       SEND CHAT
+       ==================================================================== */
+
+    const handleSend =
+        async (event) => {
+
+            event?.preventDefault();
+
+            const text =
+                inputValue.trim();
+
+            if (
+                !text ||
+                selectedPDFs.size === 0 ||
+                isLoading
+            ) {
+                return;
+            }
+
+            const temporaryId =
+                `temp-${Date.now()}`;
+
+            const userMessage = {
+
+                id:
+                    temporaryId,
+
+                role:
+                    "user",
+
+                content:
+                    text,
+
+                timestamp:
+                    new Date(),
+
+                sources:
+                    [],
             };
 
-            setMessages((prev) => [...prev, aiMsg]);
-        } catch (error) {
-            const aiMsg = {
-                id: Date.now() + 1,
-                role: "assistant",
-                content: error.message || "Something went wrong while contacting the API.",
-                timestamp: new Date(),
-                sources: [],
-            };
-            setMessages((prev) => [...prev, aiMsg]);
-        } finally {
-            setIsLoading(false);
-            inputRef.current?.focus();
-        }
-    };
+            setMessages(
+                (previous) => [
+                    ...previous,
+                    userMessage,
+                ]
+            );
 
-    const handleKeyDown = (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            handleSend();
-        }
-    };
+            setInputValue("");
 
-    const selectedCount = selectedPDFs.size;
-    const canChat = selectedCount > 0;
+            setIsLoading(true);
+
+            try {
+
+                const selectedDocumentNames =
+                    [...selectedPDFs]
+                        .map(
+                            (id) =>
+                                documents.find(
+                                    (pdf) =>
+                                        pdf.id ===
+                                        id
+                                )?.name
+                        )
+                        .filter(Boolean);
+
+
+                const response =
+                    await authenticatedFetch(
+                        "/chat",
+                        {
+                            method: "POST",
+
+                            body:
+                                JSON.stringify(
+                                    {
+                                        query:
+                                            text,
+
+                                        selected_documents:
+                                            selectedDocumentNames,
+
+                                        conversation_id:
+                                            currentConversationId,
+                                    }
+                                ),
+                        }
+                    );
+
+
+                const data =
+                    await response.json();
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        data?.detail ||
+                        "Unable to get a response from the server."
+                    );
+
+                }
+
+
+                /* --------------------------------------------------------
+                   Store conversation ID
+                -------------------------------------------------------- */
+
+                if (
+                    data?.conversation_id &&
+                    !currentConversationId
+                ) {
+
+                    setCurrentConversationId(
+                        data.conversation_id
+                    );
+
+                }
+
+
+                /* --------------------------------------------------------
+                   AI message
+                -------------------------------------------------------- */
+
+                const aiMessage = {
+
+                    id:
+                        `assistant-${Date.now()}`,
+
+                    role:
+                        "assistant",
+
+                    content:
+                        data?.answer ||
+                        "I couldn't generate a response.",
+
+                    timestamp:
+                        new Date(),
+
+                    sources:
+                        (data?.matches || [])
+                            .map(
+                                (match) =>
+                                    match
+                                        ?.metadata
+                                        ?.document_name
+                            )
+                            .filter(Boolean),
+                };
+
+
+                setMessages(
+                    (previous) => [
+
+                        ...previous,
+
+                        aiMessage,
+
+                    ]
+                );
+
+
+                /* --------------------------------------------------------
+                   Refresh sidebar
+                -------------------------------------------------------- */
+
+                await loadConversations();
+
+            } catch (error) {
+
+                const errorMessage = {
+
+                    id:
+                        `error-${Date.now()}`,
+
+                    role:
+                        "assistant",
+
+                    content:
+                        error?.message ||
+                        "Something went wrong while contacting the API.",
+
+                    timestamp:
+                        new Date(),
+
+                    sources:
+                        [],
+                };
+
+                setMessages(
+                    (previous) => [
+                        ...previous,
+                        errorMessage,
+                    ]
+                );
+
+            } finally {
+
+                setIsLoading(
+                    false
+                );
+
+                inputRef.current?.focus();
+            }
+        };
+
+
+    /* ====================================================================
+       ENTER
+       ==================================================================== */
+
+    const handleKeyDown =
+        (event) => {
+
+            if (
+                event.key === "Enter" &&
+                !event.shiftKey
+            ) {
+
+                event.preventDefault();
+
+                handleSend();
+            }
+        };
+
+
+    /* ====================================================================
+       VALUES
+       ==================================================================== */
+
+    const selectedCount =
+        selectedPDFs.size;
+
+    const canChat =
+        selectedCount > 0;
+
+
+    /* ====================================================================
+       UI
+       ==================================================================== */
 
     return (
+
         <div className="flex h-full w-full overflow-hidden bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl">
 
-            {/* ── Chat Area ── */}
-            <div className="flex flex-1 flex-col min-w-0">
-                {/* Chat Header */}
-                <div className="flex flex-col gap-2 px-6 py-4 border-b border-slate-800 bg-slate-900/70 backdrop-blur-sm">
-                    {/* Row 1: Title + Documents button */}
-                    <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                            <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400 shrink-0">
-                                <Sparkles size={18} />
-                            </div>
-                            <div className="min-w-0">
-                                <h2 className="text-sm font-bold text-foreground">Chat with PDF</h2>
-                                <p className="text-[11px] text-slate-400">
-                                    {canChat
-                                        ? `${selectedCount} document${selectedCount > 1 ? "s" : ""} selected`
-                                        : "Select documents to start chatting"}
+
+            {/* ============================================================
+               RECENT CHATS
+            ============================================================ */}
+
+            <div
+                className={`
+                    shrink-0
+                    border-r
+                    border-slate-800
+                    bg-slate-900
+                    flex
+                    flex-col
+                    transition-all
+                    duration-300
+                    overflow-hidden
+
+                    ${
+                        isHistoryOpen
+                            ? "w-64"
+                            : "w-0"
+                    }
+                `}
+            >
+
+                <div className="min-w-[16rem] flex flex-col h-full">
+
+
+                    {/* Header */}
+
+                    <div className="px-4 py-4 border-b border-slate-800">
+
+                        <div className="flex items-center justify-between">
+
+                            <div>
+
+                                <h3 className="text-sm font-bold text-slate-200">
+                                    Recent Chats
+                                </h3>
+
+                                <p className="text-[10px] text-slate-500 mt-0.5">
+                                    Your conversation history
                                 </p>
+
                             </div>
+
+                            <button
+                                onClick={() =>
+                                    setIsHistoryOpen(
+                                        false
+                                    )
+                                }
+                                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300"
+                            >
+
+                                <ChevronLeft
+                                    size={15}
+                                />
+
+                            </button>
+
                         </div>
+
+
+                        {/* New chat */}
+
                         <button
-                            onClick={() => setIsPanelOpen(!isPanelOpen)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition shrink-0"
+                            onClick={
+                                handleNewChat
+                            }
+                            className="w-full mt-4 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition"
                         >
-                            <FileText size={14} />
-                            <span className="hidden sm:inline">Documents</span>
-                            <ChevronDown
-                                size={13}
-                                className={`transition-transform ${isPanelOpen ? "rotate-180" : ""}`}
+
+                            <Plus
+                                size={14}
                             />
+
+                            New Chat
+
                         </button>
+
                     </div>
 
-                    {/* Row 2: Selected PDF chips (only when documents selected) */}
-                    {canChat && (
-                        <div className="flex flex-wrap items-center gap-1.5 pl-12">
-                            {[...selectedPDFs].slice(0, 4).map((id) => {
-                                const pdf = documents.find((p) => p.id === id);
-                                return (
-                                    <span
-                                        key={id}
-                                        className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-blue-950/60 border border-blue-800/40 text-blue-400 text-[10px] font-medium max-w-[140px] truncate"
-                                    >
-                                        <FileText size={9} className="shrink-0" />
-                                        <span className="truncate">{pdf?.label || pdf?.name}</span>
-                                    </span>
-                                );
-                            })}
-                            {selectedCount > 4 && (
-                                <span className="flex items-center px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 text-[10px] font-medium border border-slate-700">
-                                    +{selectedCount - 4} more
-                                </span>
-                            )}
-                        </div>
-                    )}
+
+                    {/* Conversations */}
+
+                    <div className="flex-1 overflow-y-auto px-2 py-3">
+
+                        {isHistoryLoading &&
+                        conversations.length === 0 ? (
+
+                            <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-500">
+
+                                <Loader2
+                                    size={14}
+                                    className="animate-spin"
+                                />
+
+                                Loading chats...
+
+                            </div>
+
+                        ) : conversations.length === 0 ? (
+
+                            <div className="flex flex-col items-center justify-center text-center py-10 px-4">
+
+                                <MessageSquare
+                                    size={22}
+                                    className="text-slate-700 mb-2"
+                                />
+
+                                <p className="text-xs text-slate-500">
+                                    No conversations yet
+                                </p>
+
+                                <p className="text-[10px] text-slate-700 mt-1">
+                                    Start a new chat to see it here.
+                                </p>
+
+                            </div>
+
+                        ) : (
+
+                            <div className="space-y-1">
+
+                                {conversations.map(
+                                    (
+                                        conversation
+                                    ) => {
+
+                                        const active =
+                                            conversation.id ===
+                                            currentConversationId;
+
+                                        return (
+
+                                            <button
+                                                key={
+                                                    conversation.id
+                                                }
+                                                onClick={() =>
+                                                    openConversation(
+                                                        conversation.id
+                                                    )
+                                                }
+                                                className={`
+                                                    w-full
+                                                    group
+                                                    flex
+                                                    items-center
+                                                    gap-2
+                                                    text-left
+                                                    px-3
+                                                    py-2.5
+                                                    rounded-xl
+                                                    transition
+
+                                                    ${
+                                                        active
+                                                            ? "bg-blue-600/15 border border-blue-500/30"
+                                                            : "border border-transparent hover:bg-slate-800"
+                                                    }
+                                                `}
+                                            >
+
+                                                <MessageSquare
+                                                    size={14}
+                                                    className={`
+                                                        shrink-0
+
+                                                        ${
+                                                            active
+                                                                ? "text-blue-400"
+                                                                : "text-slate-600"
+                                                        }
+                                                    `}
+                                                />
+
+
+                                                <div className="min-w-0 flex-1">
+
+                                                    <p
+                                                        className={`
+                                                            text-xs
+                                                            font-medium
+                                                            truncate
+
+                                                            ${
+                                                                active
+                                                                    ? "text-blue-300"
+                                                                    : "text-slate-300"
+                                                            }
+                                                        `}
+                                                    >
+                                                        {
+                                                            conversation.title
+                                                        }
+                                                    </p>
+
+                                                    <p className="text-[9px] text-slate-600 mt-0.5">
+                                                        {formatDate(
+                                                            conversation.updated_at
+                                                        )}
+                                                    </p>
+
+                                                </div>
+
+
+                                                <span
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    onClick={(
+                                                        event
+                                                    ) =>
+                                                        deleteConversation(
+                                                            event,
+                                                            conversation.id
+                                                        )
+                                                    }
+                                                    className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition"
+                                                >
+
+                                                    <Trash2
+                                                        size={12}
+                                                    />
+
+                                                </span>
+
+                                            </button>
+
+                                        );
+                                    }
+                                )}
+
+                            </div>
+
+                        )}
+
+                    </div>
+
                 </div>
 
-                {/* Messages Area */}
-                <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-                    {messages.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-center gap-5 py-16">
-                            <div className="relative">
-                                <div className="w-20 h-20 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center">
-                                    <MessageSquare size={36} className="text-blue-500/60" />
-                                </div>
-                                <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center">
-                                    <Sparkles size={12} className="text-white" />
-                                </div>
+            </div>
+
+
+            {/* ============================================================
+               CHAT AREA
+            ============================================================ */}
+
+            <div className="flex flex-1 flex-col min-w-0">
+
+
+                {/* Header */}
+
+                <div className="flex flex-col gap-2 px-6 py-4 border-b border-slate-800 bg-slate-900/70">
+
+                    <div className="flex items-center justify-between gap-3">
+
+                        <div className="flex items-center gap-3 min-w-0">
+
+                            {!isHistoryOpen && (
+
+                                <button
+                                    onClick={() =>
+                                        setIsHistoryOpen(
+                                            true
+                                        )
+                                    }
+                                    className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400"
+                                >
+
+                                    <ChevronRight
+                                        size={16}
+                                    />
+
+                                </button>
+
+                            )}
+
+
+                            <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400 shrink-0">
+
+                                <MessageSquare
+                                    size={18}
+                                />
+
                             </div>
+
+
+                            <div className="min-w-0">
+
+                                <h2 className="text-sm font-bold text-foreground">
+                                    Chat with PDF
+                                </h2>
+
+                                <p className="text-[11px] text-slate-400">
+
+                                    {canChat
+                                        ? `${selectedCount} document${
+                                            selectedCount >
+                                            1
+                                                ? "s"
+                                                : ""
+                                        } selected`
+
+                                        : "Select documents to start chatting"}
+
+                                </p>
+
+                            </div>
+
+                        </div>
+
+
+                        <button
+                            onClick={() =>
+                                setIsPanelOpen(
+                                    !isPanelOpen
+                                )
+                            }
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition shrink-0"
+                        >
+
+                            <FileText
+                                size={14}
+                            />
+
+                            <span className="hidden sm:inline">
+                                Documents
+                            </span>
+
+                            <ChevronDown
+                                size={13}
+                                className={`
+                                    transition-transform
+
+                                    ${
+                                        isPanelOpen
+                                            ? "rotate-180"
+                                            : ""
+                                    }
+                                `}
+                            />
+
+                        </button>
+
+                    </div>
+
+
+                    {/* Selected documents */}
+
+                    {canChat && (
+
+                        <div className="flex flex-wrap items-center gap-1.5 pl-12">
+
+                            {[...selectedPDFs]
+                                .slice(0, 4)
+                                .map(
+                                    (id) => {
+
+                                        const pdf =
+                                            documents.find(
+                                                (item) =>
+                                                    item.id ===
+                                                    id
+                                            );
+
+                                        return (
+
+                                            <span
+                                                key={
+                                                    id
+                                                }
+                                                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-blue-950/60 border border-blue-800/40 text-blue-400 text-[10px] font-medium max-w-[140px] truncate"
+                                            >
+
+                                                <FileText
+                                                    size={9}
+                                                    className="shrink-0"
+                                                />
+
+                                                <span className="truncate">
+                                                    {
+                                                        pdf?.label ||
+                                                        pdf?.name
+                                                    }
+                                                </span>
+
+                                            </span>
+
+                                        );
+                                    }
+                                )}
+
+                            {selectedCount > 4 && (
+
+                                <span className="flex items-center px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 text-[10px] font-medium border border-slate-700">
+
+                                    +
+                                    {selectedCount - 4}
+                                    {" "}
+                                    more
+
+                                </span>
+
+                            )}
+
+                        </div>
+
+                    )}
+
+                </div>
+
+
+                {/* ========================================================
+                   MESSAGES
+                ======================================================== */}
+
+                <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+
+                    {messages.length === 0 ? (
+
+                        <div className="flex flex-col items-center justify-center h-full text-center gap-5 py-16">
+
+                            <div className="w-20 h-20 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center">
+
+                                <MessageSquare
+                                    size={36}
+                                    className="text-blue-500/60"
+                                />
+
+                            </div>
+
+
                             <div>
+
                                 <h3 className="text-base font-semibold text-slate-200">
                                     Ask anything about your documents
                                 </h3>
+
                                 <p className="text-sm text-slate-500 mt-1.5 max-w-xs">
                                     Select one or more PDFs from the panel, then type your question below.
                                 </p>
+
                             </div>
+
+
                             {!canChat && (
+
                                 <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
-                                    <AlertCircle size={14} />
-                                    No documents selected. Use the panel on the right to select PDFs.
+
+                                    <AlertCircle
+                                        size={14}
+                                    />
+
+                                    No documents selected.
+
                                 </div>
+
                             )}
+
+
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-sm w-full">
+
                                 {[
                                     "Summarize the key findings",
                                     "What are the main risks?",
                                     "List all action items",
                                     "Compare the two documents",
-                                ].map((prompt) => (
-                                    <button
-                                        key={prompt}
-                                        onClick={() => {
-                                            if (canChat) {
-                                                setInputValue(prompt);
-                                                inputRef.current?.focus();
+                                ].map(
+                                    (
+                                        prompt
+                                    ) => (
+
+                                        <button
+                                            key={
+                                                prompt
                                             }
-                                        }}
-                                        disabled={!canChat}
-                                        className="px-3 py-2 text-xs text-slate-400 border border-slate-800 rounded-xl hover:border-blue-800/60 hover:text-blue-400 hover:bg-blue-950/20 transition disabled:opacity-40 disabled:cursor-not-allowed text-left"
-                                    >
-                                        {prompt}
-                                    </button>
-                                ))}
+                                            onClick={() => {
+
+                                                if (
+                                                    canChat
+                                                ) {
+
+                                                    setInputValue(
+                                                        prompt
+                                                    );
+
+                                                    inputRef.current?.focus();
+
+                                                }
+
+                                            }}
+                                            disabled={
+                                                !canChat
+                                            }
+                                            className="px-3 py-2 text-xs text-slate-400 border border-slate-800 rounded-xl hover:border-blue-800/60 hover:text-blue-400 hover:bg-blue-950/20 transition disabled:opacity-40 disabled:cursor-not-allowed text-left"
+                                        >
+                                            {
+                                                prompt
+                                            }
+                                        </button>
+
+                                    )
+                                )}
+
                             </div>
+
                         </div>
+
                     ) : (
+
                         <>
-                            {messages.map((msg) => (
-                                <div
-                                    key={msg.id}
-                                    className={`flex gap-3.5 ${msg.role === "user" ? "flex-row-reverse" : ""}`}
-                                >
-                                    {/* Avatar */}
+
+                            {messages.map(
+                                (
+                                    message
+                                ) => (
+
                                     <div
-                                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                                            msg.role === "user"
-                                                ? "bg-blue-600 text-white"
-                                                : "bg-slate-800 border border-slate-700 text-blue-400"
-                                        }`}
+                                        key={
+                                            message.id
+                                        }
+                                        className={`
+                                            flex
+                                            gap-3.5
+
+                                            ${
+                                                message.role ===
+                                                "user"
+                                                    ? "flex-row-reverse"
+                                                    : ""
+                                            }
+                                        `}
                                     >
-                                        {msg.role === "user" ? <User size={15} /> : <Bot size={15} />}
+
+                                        <div
+                                            className={`
+                                                w-8
+                                                h-8
+                                                rounded-xl
+                                                flex
+                                                items-center
+                                                justify-center
+                                                shrink-0
+
+                                                ${
+                                                    message.role ===
+                                                    "user"
+                                                        ? "bg-blue-600 text-white"
+                                                        : "bg-slate-800 border border-slate-700 text-blue-400"
+                                                }
+                                            `}
+                                        >
+
+                                            {message.role ===
+                                            "user" ? (
+
+                                                <User
+                                                    size={15}
+                                                />
+
+                                            ) : (
+
+                                                <Bot
+                                                    size={15}
+                                                />
+
+                                            )}
+
+                                        </div>
+
+
+                                        <div
+                                            className={`
+                                                max-w-[75%]
+                                                flex
+                                                flex-col
+                                                gap-1.5
+
+                                                ${
+                                                    message.role ===
+                                                    "user"
+                                                        ? "items-end"
+                                                        : "items-start"
+                                                }
+                                            `}
+                                        >
+
+                                            <div
+                                                className={`
+                                                    px-4
+                                                    py-3
+                                                    rounded-2xl
+                                                    text-sm
+                                                    leading-relaxed
+                                                    
+                                                    ${
+                                                        message.role ===
+                                                        "user"
+                                                            ? "bg-blue-600 text-white rounded-tr-sm"
+                                                            : "bg-slate-800 border border-slate-700 text-slate-200 rounded-tl-sm"
+                                                    }
+                                                `}
+                                            >
+                                                {
+                                                    message.content
+                                                }
+                                            </div>
+
+
+                                            {message.sources &&
+                                            message.sources.length >
+                                                0 && (
+
+                                                <div className="flex flex-wrap gap-1 mt-1">
+
+                                                    <span className="text-[10px] text-slate-600">
+                                                        Sources:
+                                                    </span>
+
+                                                    {message.sources
+                                                        .filter(
+                                                            Boolean
+                                                        )
+                                                        .filter(
+                                                            (
+                                                                src,
+                                                                index,
+                                                                array
+                                                            ) =>
+                                                                array.indexOf(
+                                                                    src
+                                                                ) ===
+                                                                index
+                                                        )
+                                                        .map(
+                                                            (
+                                                                src
+                                                            ) => (
+
+                                                                <span
+                                                                    key={`${message.id}-${src}`}
+                                                                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700"
+                                                                >
+
+                                                                    <FileText
+                                                                        size={9}
+                                                                    />
+
+                                                                    {src.replace(
+                                                                        /\.pdf$/i,
+                                                                        ""
+                                                                    )}
+
+                                                                </span>
+
+                                                            )
+                                                        )}
+
+                                                </div>
+
+                                            )}
+
+
+                                            <span className="text-[10px] text-slate-600">
+
+                                                {formatMessageTime(
+                                                    message.timestamp
+                                                )}
+
+                                            </span>
+
+                                        </div>
+
                                     </div>
 
-                                    {/* Bubble */}
-                                    <div className={`max-w-[75%] ${msg.role === "user" ? "items-end" : "items-start"} flex flex-col gap-1.5`}>
-                                        <div
-                                            className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                                                msg.role === "user"
-                                                    ? "bg-blue-600 text-white rounded-tr-sm"
-                                                    : "bg-slate-800 border border-slate-700 text-slate-200 rounded-tl-sm"
-                                            }`}
-                                        >
-                                            {msg.content}
-                                        </div>
-                                        {msg.sources && (
-                                            <div className="flex flex-wrap gap-1 mt-1">
-                                                <span className="text-[10px] text-slate-600">Sources:</span>
-                                                {msg.sources
-                                                    .filter(Boolean)
-                                                    .filter((src, index, arr) => arr.indexOf(src) === index)
-                                                    .map((src) => (
-                                                        <span
-                                                            key={`${msg.id}-${src}`}
-                                                            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700"
-                                                        >
-                                                            <FileText size={9} />
-                                                            {src?.replace(".pdf", "")}
-                                                        </span>
-                                                    ))}
-                                            </div>
-                                        )}
-                                        <span className="text-[10px] text-slate-600">
-                                            {msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                                        </span>
-                                    </div>
-                                </div>
-                            ))}
-                            {isLoading && (
-                                <div className="flex gap-3.5">
-                                    <div className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 text-blue-400 flex items-center justify-center shrink-0">
-                                        <Bot size={15} />
-                                    </div>
-                                    <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-slate-800 border border-slate-700 flex items-center gap-2">
-                                        <Loader2 size={14} className="text-blue-400 animate-spin" />
-                                        <span className="text-sm text-slate-400">Analyzing documents…</span>
-                                    </div>
-                                </div>
+                                )
                             )}
-                            <div ref={messagesEndRef} />
+
+
+                            {isLoading && (
+
+                                <div className="flex gap-3.5">
+
+                                    <div className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 text-blue-400 flex items-center justify-center shrink-0">
+
+                                        <Bot
+                                            size={15}
+                                        />
+
+                                    </div>
+
+
+                                    <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-slate-800 border border-slate-700 flex items-center gap-2">
+
+                                        <Loader2
+                                            size={14}
+                                            className="text-blue-400 animate-spin"
+                                        />
+
+                                        <span className="text-sm text-slate-400">
+                                            Analyzing documents…
+                                        </span>
+
+                                    </div>
+
+                                </div>
+
+                            )}
+
+
+                            <div
+                                ref={
+                                    messagesEndRef
+                                }
+                            />
+
                         </>
+
                     )}
+
                 </div>
 
-                {/* Input Area */}
+
+                {/* ========================================================
+                   INPUT
+                ======================================================== */}
+
                 <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/50">
+
                     {!canChat && (
+
                         <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/15 text-amber-400/80 text-xs">
-                            <AlertCircle size={13} />
+
+                            <AlertCircle
+                                size={13}
+                            />
+
                             Select at least one PDF document to enable chat.
+
                         </div>
+
                     )}
-                    <form onSubmit={handleSend} className="flex items-end gap-3">
+
+
+                    <form
+                        onSubmit={
+                            handleSend
+                        }
+                        className="flex items-end gap-3"
+                    >
+
                         <div className="flex-1 relative">
+
                             <textarea
-                                ref={inputRef}
+                                ref={
+                                    inputRef
+                                }
                                 rows={1}
-                                value={inputValue}
-                                onChange={(e) => setInputValue(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                disabled={!canChat || isLoading}
+                                value={
+                                    inputValue
+                                }
+                                onChange={(
+                                    event
+                                ) =>
+                                    setInputValue(
+                                        event.target.value
+                                    )
+                                }
+                                onKeyDown={
+                                    handleKeyDown
+                                }
+                                disabled={
+                                    !canChat ||
+                                    isLoading
+                                }
                                 placeholder={
                                     canChat
                                         ? "Ask a question about your documents…"
                                         : "Select documents first to start chatting…"
                                 }
                                 className="w-full resize-none bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 pr-10 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition disabled:opacity-50 disabled:cursor-not-allowed max-h-32"
-                                style={{ minHeight: "48px" }}
+                                style={{
+                                    minHeight:
+                                        "48px",
+                                }}
                             />
-                            <Paperclip size={15} className="absolute right-3 bottom-3.5 text-slate-600" />
+
+                            <Paperclip
+                                size={15}
+                                className="absolute right-3 bottom-3.5 text-slate-600"
+                            />
+
                         </div>
+
+
                         <button
                             type="submit"
-                            disabled={!canChat || !inputValue.trim() || isLoading}
+                            disabled={
+                                !canChat ||
+                                !inputValue.trim() ||
+                                isLoading
+                            }
                             className="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition shadow-lg shadow-blue-950/40 active:scale-95 shrink-0"
                         >
+
                             {isLoading ? (
-                                <Loader2 size={18} className="animate-spin" />
+
+                                <Loader2
+                                    size={18}
+                                    className="animate-spin"
+                                />
+
                             ) : (
-                                <Send size={18} />
+
+                                <Send
+                                    size={18}
+                                />
+
                             )}
+
                         </button>
+
                     </form>
+
+
                     <p className="text-[10px] text-slate-600 mt-2 text-center">
+
                         PatraRekhaAI may produce inaccurate information. Verify important details.
+
                     </p>
+
                 </div>
+
             </div>
 
-            {/* ── Right Panel: PDF List ── */}
+
+            {/* ============================================================
+               DOCUMENT PANEL
+            ============================================================ */}
+
             <div
-                className={`shrink-0 border-l border-slate-800 bg-slate-900 flex flex-col transition-all duration-300 overflow-hidden ${
-                    isPanelOpen ? "w-72 xl:w-80" : "w-0"
-                }`}
+                className={`
+                    shrink-0
+                    border-l
+                    border-slate-800
+                    bg-slate-900
+                    flex
+                    flex-col
+                    transition-all
+                    duration-300
+                    overflow-hidden
+
+                    ${
+                        isPanelOpen
+                            ? "w-72 xl:w-80"
+                            : "w-0"
+                    }
+                `}
             >
+
                 <div className="min-w-[17rem] xl:min-w-[19rem] flex flex-col h-full">
-                    {/* Panel Header */}
+
+
+                    {/* Header */}
+
                     <div className="flex items-center justify-between px-4 py-4 border-b border-slate-800">
+
                         <div>
-                            <h3 className="text-sm font-bold text-foreground">Your Documents</h3>
+
+                            <h3 className="text-sm font-bold text-foreground">
+                                Your Documents
+                            </h3>
+
                             <p className="text-[11px] text-slate-500 mt-0.5">
-                                {selectedCount} / {MAX_SELECTION} selected
+
+                                {selectedCount}
+                                {" / "}
+                                {MAX_SELECTION}
+                                {" selected"}
+
                             </p>
+
                         </div>
+
+
                         <button
-                            onClick={toggleAllPDFs}
-                            className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                            onClick={
+                                toggleAllPDFs
+                            }
+                            disabled={
+                                documents.length ===
+                                0
+                            }
+                            className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition disabled:opacity-40"
                         >
-                            {selectedPDFs.size > 0
+
+                            {selectedPDFs.size >
+                            0
+
                                 ? "Deselect All"
-                                : documents.length > MAX_SELECTION
-                                    ? `Select ${MAX_SELECTION}`
-                                    : "Select All"}
+
+                                : documents.length >
+                                  MAX_SELECTION
+
+                                ? `Select ${MAX_SELECTION}`
+
+                                : "Select All"}
+
                         </button>
+
                     </div>
 
+
                     {/* Search */}
+
                     <div className="px-4 py-3 border-b border-slate-800/60">
+
                         <div className="relative">
-                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+
+                            <Search
+                                size={14}
+                                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                            />
+
                             <input
                                 type="text"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
+                                value={
+                                    searchQuery
+                                }
+                                onChange={(
+                                    event
+                                ) =>
+                                    setSearchQuery(
+                                        event.target.value
+                                    )
+                                }
                                 placeholder="Search documents..."
                                 className="w-full bg-slate-800 border border-slate-700/60 rounded-lg pl-8 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
                             />
+
+
                             {searchQuery && (
+
                                 <button
-                                    onClick={() => setSearchQuery("")}
+                                    onClick={() =>
+                                        setSearchQuery(
+                                            ""
+                                        )
+                                    }
                                     className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
                                 >
-                                    <X size={13} />
+
+                                    <X
+                                        size={13}
+                                    />
+
                                 </button>
+
                             )}
+
                         </div>
+
                     </div>
 
-                    {/* PDF List */}
+
+                    {/* Documents */}
+
                     <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
+
                         {isDocumentsLoading ? (
+
                             <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-500">
-                                <Loader2 size={14} className="animate-spin text-blue-400" />
+
+                                <Loader2
+                                    size={14}
+                                    className="animate-spin text-blue-400"
+                                />
+
                                 Loading documents...
+
                             </div>
+
                         ) : documentsError ? (
+
                             <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-                                <AlertCircle size={20} className="text-amber-400" />
-                                <p className="text-xs text-slate-500">{documentsError}</p>
+
+                                <AlertCircle
+                                    size={20}
+                                    className="text-amber-400"
+                                />
+
+                                <p className="text-xs text-slate-500">
+                                    {
+                                        documentsError
+                                    }
+                                </p>
+
                             </div>
-                        ) : filteredPDFs.length > 0 ? (
-                            filteredPDFs.map((pdf) => {
-                                const isSelected = selectedPDFs.has(pdf.id);
-                                const isAtLimit = !isSelected && selectedPDFs.size >= MAX_SELECTION;
 
-                                return (
-                                    <button
-                                        key={pdf.id}
-                                        onClick={() => togglePDF(pdf.id)}
-                                        disabled={isAtLimit}
-                                        className={`w-full flex items-start gap-3 p-3 rounded-xl text-left border transition-all group ${
-                                            isSelected
-                                                ? "bg-blue-600/10 border-blue-500/40 shadow-sm"
-                                                : "bg-slate-800/30 border-slate-800/60 hover:border-slate-700 hover:bg-slate-800/60"
-                                        } ${isAtLimit ? "opacity-60 cursor-not-allowed" : ""}`}
-                                    >
-                                        {/* Checkbox */}
-                                        <div className={`shrink-0 mt-0.5 transition ${isSelected ? "text-blue-400" : "text-slate-600 group-hover:text-slate-400"}`}>
-                                            {isSelected ? <CheckSquare size={17} /> : <Square size={17} />}
-                                        </div>
+                        ) : filteredPDFs.length >
+                          0 ? (
 
-                                        {/* PDF Icon */}
-                                        <div className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold border transition ${
-                                            isSelected
-                                                ? "bg-blue-600/20 border-blue-500/30 text-blue-400"
-                                                : "bg-slate-800 border-slate-700 text-slate-500"
-                                        }`}>
-                                            <FileText size={14} />
-                                        </div>
+                            filteredPDFs.map(
+                                (
+                                    pdf
+                                ) => {
 
-                                        {/* Info */}
-                                        <div className="min-w-0 flex-1">
-                                            <p className={`text-xs font-medium leading-snug truncate transition ${isSelected ? "text-blue-300" : "text-slate-300 group-hover:text-slate-200"}`}>
-                                                {pdf.label}
-                                            </p>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <span className="text-[10px] text-slate-600">{pdf.size}</span>
-                                                <span className="text-[10px] text-slate-700">·</span>
-                                                <span className="text-[10px] text-slate-600 truncate">{pdf.filename}</span>
+                                    const isSelected =
+                                        selectedPDFs.has(
+                                            pdf.id
+                                        );
+
+                                    const isAtLimit =
+                                        !isSelected &&
+                                        selectedPDFs.size >=
+                                            MAX_SELECTION;
+
+                                    return (
+
+                                        <button
+                                            key={
+                                                pdf.id
+                                            }
+                                            onClick={() =>
+                                                togglePDF(
+                                                    pdf.id
+                                                )
+                                            }
+                                            disabled={
+                                                isAtLimit
+                                            }
+                                            className={`
+                                                w-full
+                                                flex
+                                                items-start
+                                                gap-3
+                                                p-3
+                                                rounded-xl
+                                                text-left
+                                                border
+                                                transition-all
+                                                group
+
+                                                ${
+                                                    isSelected
+                                                        ? "bg-blue-600/10 border-blue-500/40 shadow-sm"
+                                                        : "bg-slate-800/30 border-slate-800/60 hover:border-slate-700 hover:bg-slate-800/60"
+                                                }
+
+                                                ${
+                                                    isAtLimit
+                                                        ? "opacity-60 cursor-not-allowed"
+                                                        : ""
+                                                }
+                                            `}
+                                        >
+
+                                            <div
+                                                className={`
+                                                    shrink-0
+                                                    mt-0.5
+                                                    transition
+
+                                                    ${
+                                                        isSelected
+                                                            ? "text-blue-400"
+                                                            : "text-slate-600 group-hover:text-slate-400"
+                                                    }
+                                                `}
+                                            >
+
+                                                {isSelected ? (
+
+                                                    <CheckSquare
+                                                        size={17}
+                                                    />
+
+                                                ) : (
+
+                                                    <Square
+                                                        size={17}
+                                                    />
+
+                                                )}
+
                                             </div>
-                                            <p className="text-[10px] text-slate-700 mt-0.5">{pdf.uploaded}</p>
-                                        </div>
-                                    </button>
-                                );
-                            })
+
+
+                                            <div
+                                                className={`
+                                                    shrink-0
+                                                    w-8
+                                                    h-8
+                                                    rounded-lg
+                                                    flex
+                                                    items-center
+                                                    justify-center
+                                                    text-xs
+                                                    font-bold
+                                                    border
+                                                    transition
+
+                                                    ${
+                                                        isSelected
+                                                            ? "bg-blue-600/20 border-blue-500/30 text-blue-400"
+                                                            : "bg-slate-800 border-slate-700 text-slate-500"
+                                                    }
+                                                `}
+                                            >
+
+                                                <FileText
+                                                    size={14}
+                                                />
+
+                                            </div>
+
+
+                                            <div className="min-w-0 flex-1">
+
+                                                <p
+                                                    className={`
+                                                        text-xs
+                                                        font-medium
+                                                        leading-snug
+                                                        truncate
+                                                        transition
+
+                                                        ${
+                                                            isSelected
+                                                                ? "text-blue-300"
+                                                                : "text-slate-300 group-hover:text-slate-200"
+                                                        }
+                                                    `}
+                                                >
+                                                    {
+                                                        pdf.label
+                                                    }
+                                                </p>
+
+
+                                                <div className="flex items-center gap-2 mt-1">
+
+                                                    <span className="text-[10px] text-slate-600">
+                                                        {
+                                                            pdf.size
+                                                        }
+                                                    </span>
+
+                                                    <span className="text-[10px] text-slate-700">
+                                                        ·
+                                                    </span>
+
+                                                    <span className="text-[10px] text-slate-600 truncate">
+                                                        {
+                                                            pdf.filename
+                                                        }
+                                                    </span>
+
+                                                </div>
+
+
+                                                <p className="text-[10px] text-slate-700 mt-0.5">
+
+                                                    {
+                                                        pdf.uploaded
+                                                    }
+
+                                                </p>
+
+                                            </div>
+
+                                        </button>
+                                    );
+                                }
+                            )
+
                         ) : (
+
                             <div className="flex flex-col items-center justify-center py-10 text-center">
-                                <Search size={20} className="text-slate-600 mb-2" />
-                                <p className="text-xs text-slate-500">No documents found</p>
+
+                                <Search
+                                    size={20}
+                                    className="text-slate-600 mb-2"
+                                />
+
+                                <p className="text-xs text-slate-500">
+                                    No documents found
+                                </p>
+
                             </div>
+
                         )}
+
                     </div>
 
-                    {/* Panel Footer */}
+
+                    {/* Footer */}
+
                     <div className="px-4 py-3 border-t border-slate-800 bg-slate-950/50">
-                        <button className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-slate-700 hover:border-blue-600/50 hover:bg-blue-600/5 text-slate-500 hover:text-blue-400 text-xs font-medium transition">
-                            <Upload size={14} />
+
+                        <button
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-slate-700 hover:border-blue-600/50 hover:bg-blue-600/5 text-slate-500 hover:text-blue-400 text-xs font-medium transition"
+                        >
+
+                            <Upload
+                                size={14}
+                            />
+
                             Upload New PDF
+
                         </button>
+
                     </div>
+
                 </div>
+
             </div>
+
         </div>
     );
 }

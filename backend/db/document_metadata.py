@@ -70,3 +70,15 @@ def list_document_metadata():
     )
 
     return response.data
+
+
+def delete_document_metadata(file_id: str):
+    """Delete the metadata row for a file (idempotent)."""
+    UUID(str(file_id))
+    response = (
+        supabase.table(DOCUMENT_METADATA_TABLE)
+        .delete()
+        .eq("file_id", str(file_id))
+        .execute()
+    )
+    return response.data

@@ -46,3 +46,16 @@ DISTANCE_METRIC = "cosine"
 # ---------------------------------------------------------------------
 
 UPSERT_BATCH_SIZE = 100
+
+
+# ---------------------------------------------------------------------
+# Namespace Configuration
+# ---------------------------------------------------------------------
+
+# Pinecone namespaces provide per-user isolation within a single index.
+# When USE_NAMESPACES is True, every upsert/query/delete operation is
+# scoped to a namespace derived from the owner_email.  Set to "true" or
+# "false" to enable/disable the feature without changing call sites.
+USE_NAMESPACES = os.getenv("USE_PINECONE_NAMESPACES", "true").lower() in (
+    "1", "true", "yes",
+)
