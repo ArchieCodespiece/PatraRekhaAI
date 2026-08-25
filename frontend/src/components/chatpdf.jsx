@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 import {
     FileText,
@@ -21,7 +21,12 @@ import {
     Upload,
     Plus,
     Trash2,
+    ExternalLink,
+    BookOpen,
 } from "lucide-react";
+
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import {
     fetchDocuments,
@@ -46,7 +51,7 @@ function cleanFilename(filename) {
 
 function filenameStem(filename) {
     return cleanFilename(filename).replace(
-        /\.pdf$/i,
+        /\.[^.]+$/i,
         ""
     );
 }
@@ -170,27 +175,34 @@ function normalizeDocument(document) {
 
 
 function normalizeMessage(message) {
+    const rawSources = Array.isArray(message.sources)
+        ? message.sources
+        : [];
+    const rawCitations = Array.isArray(message.citations)
+        ? message.citations
+        : [];
+
+    const citations = rawCitations.map((c) => ({
+        document_name: c.document_name || "",
+        file_id: c.file_id || "",
+        page_start: c.page_start ?? null,
+        page_end: c.page_end ?? null,
+        section: c.section || "",
+        text: c.text || "",
+        score: typeof c.score === "number" ? c.score : 0,
+    }));
+
+    const sources = citations.length > 0
+        ? citations.map((c) => c.document_name).filter(Boolean)
+        : rawSources;
+
     return {
-        id:
-            message.id,
-
-        role:
-            message.role,
-
-        content:
-            message.content,
-
-        timestamp:
-            new Date(
-                message.created_at
-            ),
-
-        sources:
-            Array.isArray(
-                message.sources
-            )
-                ? message.sources
-                : [],
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        timestamp: new Date(message.created_at),
+        sources,
+        citations,
     };
 }
 
@@ -294,9 +306,146 @@ export default function ChatWithPDF() {
         useRef(null);
 
 
+    /* --------------------------------------------------------------------
+       Citation preview
+    -------------------------------------------------------------------- */
+
+    const [
+        previewDocument,
+        setPreviewDocument,
+    ] = useState(null);
+
+    const [
+        previewUrl,
+        setPreviewUrl,
+    ] = useState("");
+
+    const [
+        previewPage,
+        setPreviewPage,
+    ] = useState(null);
+
+    const [
+        previewText,
+        setPreviewText,
+    ] = useState("");
+
+    const [
+        isPreviewLoading,
+        setIsPreviewLoading,
+    ] = useState(false);
+
+
+    const openCitation =
+        useCallback(
+            async (citation) => {
+                if (!citation) {
+                    return;
+                }
+
+                const fileId =
+                    citation.file_id ||
+                    (citation.document_name &&
+                        documents.find(
+                            (d) =>
+                                d.name ===
+                                citation.document_name
+                        )?.id);
+
+                if (!fileId) {
+                    return;
+                }
+
+                setIsPreviewLoading(
+                    true
+                );
+                setPreviewText(
+                    citation.text ||
+                    ""
+                );
+                setPreviewPage(
+                    citation.page_start ||
+                    null
+                );
+
+                try {
+                    const localDocument =
+                        documents.find(
+                            (d) =>
+                                d.id ===
+                                fileId
+                        );
+
+                    if (
+                        localDocument?.file_url
+                    ) {
+                        setPreviewDocument(
+                            localDocument
+                        );
+                        setPreviewUrl(
+                            localDocument.file_url
+                        );
+                    } else {
+                        const response =
+                            await authenticatedFetch(
+                                `/get-documents/${encodeURIComponent(
+                                    fileId
+                                )}`
+                            );
+
+                        const data =
+                            await response.json();
+
+                        if (
+                            !response.ok
+                        ) {
+                            throw new Error(
+                                data?.detail ||
+                                    "Unable to load document."
+                            );
+                        }
+
+                        setPreviewDocument(
+                            {
+                                file_id:
+                                    fileId,
+                                filename:
+                                    citation.document_name,
+                            }
+                        );
+                        setPreviewUrl(
+                            data?.file_url ||
+                            ""
+                        );
+                    }
+                } catch {
+                    setPreviewDocument(
+                        null
+                    );
+                    setPreviewUrl("");
+                } finally {
+                    setIsPreviewLoading(
+                        false
+                    );
+                }
+            },
+            [documents]
+        );
+
+    const closePreview =
+        useCallback(() => {
+            setPreviewDocument(
+                null
+            );
+            setPreviewUrl("");
+            setPreviewPage(null);
+            setPreviewText("");
+        }, []);
+
+
     /* ====================================================================
        FILTER DOCUMENTS
-       ==================================================================== */
+    ==================================================================== */
 
     const filteredPDFs =
         documents.filter(
@@ -892,14 +1041,18 @@ export default function ChatWithPDF() {
                         new Date(),
 
                     sources:
-                        (data?.matches || [])
-                            .map(
-                                (match) =>
-                                    match
-                                        ?.metadata
-                                        ?.document_name
-                            )
-                            .filter(Boolean),
+                        Array.isArray(
+                            data?.sources
+                        )
+                            ? data.sources
+                            : [],
+
+                    citations:
+                        Array.isArray(
+                            data?.citations
+                        )
+                            ? data.citations
+                            : [],
                 };
 
 
@@ -1602,63 +1755,240 @@ export default function ChatWithPDF() {
                                                     }
                                                 `}
                                             >
-                                                {
-                                                    message.content
-                                                }
+                                                <ReactMarkdown
+                                                    remarkPlugins={[
+                                                        remarkGfm,
+                                                    ]}
+                                                    components={{
+                                                        table: ({
+                                                            children,
+                                                        }) => (
+                                                            <div className="overflow-x-auto my-2 -mx-1">
+                                                                <table className="min-w-full border-collapse text-xs">
+                                                                    {children}
+                                                                </table>
+                                                            </div>
+                                                        ),
+                                                        th: ({
+                                                            children,
+                                                        }) => (
+                                                            <th className="border border-slate-600 px-2 py-1 bg-slate-700 text-slate-200 text-left font-semibold">
+                                                                {children}
+                                                            </th>
+                                                        ),
+                                                        td: ({
+                                                            children,
+                                                        }) => (
+                                                            <td className="border border-slate-600 px-2 py-1 text-slate-300">
+                                                                {children}
+                                                            </td>
+                                                        ),
+                                                        ul: ({
+                                                            children,
+                                                        }) => (
+                                                            <ul className="list-disc list-inside space-y-1 my-2">
+                                                                {children}
+                                                            </ul>
+                                                        ),
+                                                        ol: ({
+                                                            children,
+                                                        }) => (
+                                                            <ol className="list-decimal list-inside space-y-1 my-2">
+                                                                {children}
+                                                            </ol>
+                                                        ),
+                                                        p: ({
+                                                            children,
+                                                        }) => (
+                                                            <p className="mb-2 last:mb-0">
+                                                                {children}
+                                                            </p>
+                                                        ),
+                                                        h1: ({
+                                                            children,
+                                                        }) => (
+                                                            <h1 className="text-lg font-bold mt-4 mb-2 text-slate-100">
+                                                                {children}
+                                                            </h1>
+                                                        ),
+                                                        h2: ({
+                                                            children,
+                                                        }) => (
+                                                            <h2 className="text-base font-bold mt-3 mb-2 text-slate-100">
+                                                                {children}
+                                                            </h2>
+                                                        ),
+                                                        h3: ({
+                                                            children,
+                                                        }) => (
+                                                            <h3 className="text-sm font-semibold mt-2 mb-1 text-slate-200">
+                                                                {children}
+                                                            </h3>
+                                                        ),
+                                                        strong: ({
+                                                            children,
+                                                        }) => (
+                                                            <strong className="font-semibold text-slate-100">
+                                                                {children}
+                                                            </strong>
+                                                        ),
+                                                        a: ({
+                                                            href,
+                                                            children,
+                                                        }) => (
+                                                            <a
+                                                                href={href}
+                                                                className="text-blue-400 underline"
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                            >
+                                                                {children}
+                                                            </a>
+                                                        ),
+                                                        code: ({
+                                                            inline,
+                                                            children,
+                                                        }) =>
+                                                            inline ? (
+                                                                <code className="bg-slate-700 px-1 py-0.5 rounded text-blue-300 text-xs">
+                                                                    {children}
+                                                                </code>
+                                                            ) : (
+                                                                <code className="block bg-slate-900 p-3 rounded-lg text-slate-300 text-xs overflow-x-auto my-2">
+                                                                    {children}
+                                                                </code>
+                                                            ),
+                                                    }}
+                                                >
+                                                    {message.content}
+                                                </ReactMarkdown>
                                             </div>
 
 
-                                            {message.sources &&
-                                            message.sources.length >
-                                                0 && (
-
-                                                <div className="flex flex-wrap gap-1 mt-1">
-
-                                                    <span className="text-[10px] text-slate-600">
+                                            {((message.citations &&
+                                                message.citations.length >
+                                                0) ||
+                                                (message.sources &&
+                                                    message.sources
+                                                        .length >
+                                                    0)) && (
+                                                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                    <span className="text-[10px] text-slate-600 self-center mr-1">
                                                         Sources:
                                                     </span>
 
-                                                    {message.sources
-                                                        .filter(
-                                                            Boolean
-                                                        )
-                                                        .filter(
-                                                            (
-                                                                src,
-                                                                index,
-                                                                array
-                                                            ) =>
-                                                                array.indexOf(
-                                                                    src
-                                                                ) ===
-                                                                index
-                                                        )
-                                                        .map(
-                                                            (
-                                                                src
-                                                            ) => (
+                                                    {message.citations &&
+                                                        message.citations
+                                                            .length >
+                                                        0
+                                                        ? message.citations
+                                                              .filter(
+                                                                  (c) =>
+                                                                      c
+                                                                          .document_name
+                                                              )
+                                                              .map(
+                                                                  (
+                                                                      citation,
+                                                                      idx
+                                                                  ) => {
+                                                                      const pageLabel =
+                                                                          citation.page_start &&
+                                                                          citation.page_end
+                                                                              ? citation.page_start ===
+                                                                                citation.page_end
+                                                                                  ? `Page ${citation.page_start}`
+                                                                                  : `Pages ${citation.page_start}-${citation.page_end}`
+                                                                              : citation.page_start
+                                                                                ? `Page ${citation.page_start}`
+                                                                                : null;
 
-                                                                <span
-                                                                    key={`${message.id}-${src}`}
-                                                                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700"
-                                                                >
+                                                                      return (
+                                                                          <button
+                                                                              key={
+                                                                                  `${message.id}-citation-${idx}`
+                                                                              }
+                                                                              onClick={
+                                                                                  () =>
+                                                                                      openCitation(
+                                                                                          citation
+                                                                                      )
+                                                                              }
+                                                                              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 hover:border-blue-500/50 hover:text-blue-300 transition cursor-pointer text-left"
+                                                                          >
+                                                                              <FileText
+                                                                                  size={
+                                                                                      9
+                                                                                  }
+                                                                              />
 
-                                                                    <FileText
-                                                                        size={9}
-                                                                    />
+                                                                              <span className="truncate max-w-[140px]">
+                                                                               {citation.document_name.replace(
+                                                                                   /\.[^.]+$/i,
+                                                                                   ""
+                                                                               )}
+                                                                              </span>
 
-                                                                    {src.replace(
-                                                                        /\.pdf$/i,
-                                                                        ""
-                                                                    )}
+                                                                              {pageLabel && (
+                                                                                  <span className="text-slate-500">
+                                                                                      ·
+                                                                                      {pageLabel}
+                                                                                  </span>
+                                                                              )}
 
-                                                                </span>
+                                                                              {citation.section && (
+                                                                                  <span className="text-slate-500 truncate max-w-[100px]">
+                                                                                      ·
+                                                                                      {citation.section}
+                                                                                  </span>
+                                                                              )}
 
-                                                            )
-                                                        )}
+                                                                              <ExternalLink
+                                                                                  size={
+                                                                                      8
+                                                                                  }
+                                                                                  className="shrink-0 text-slate-500"
+                                                                              />
+                                                                          </button>
+                                                                      );
+                                                                  }
+                                                              )
+                                                        : message.sources
+                                                              .filter(
+                                                                  Boolean
+                                                              )
+                                                              .filter(
+                                                                  (
+                                                                      src,
+                                                                      index,
+                                                                      array
+                                                                  ) =>
+                                                                      array
+                                                                          .indexOf(
+                                                                              src
+                                                                          ) ===
+                                                                      index
+                                                              )
+                                                              .map(
+                                                                  (src) => (
+                                                                      <span
+                                                                          key={`${message.id}-${src}`}
+                                                                          className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700"
+                                                                      >
+                                                                          <FileText
+                                                                              size={
+                                                                                  9
+                                                                              }
+                                                                          />
 
+                                                                           {src.replace(
+                                                                               /\.[^.]+$/i,
+                                                                               ""
+                                                                           )}
+                                                                      </span>
+                                                                  )
+                                                              )}
                                                 </div>
-
                                             )}
 
 
@@ -2215,8 +2545,111 @@ export default function ChatWithPDF() {
 
                 </div>
 
+                {previewUrl && (
+                    <CitationPreviewModal
+                        document={previewDocument}
+                        previewUrl={previewUrl}
+                        previewPage={previewPage}
+                        previewText={previewText}
+                        isPreviewLoading={isPreviewLoading}
+                        onClose={closePreview}
+                    />
+                )}
             </div>
 
+        </div>
+    );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Citation preview modal                                                      */
+/* -------------------------------------------------------------------------- */
+
+function CitationPreviewModal({
+    document,
+    previewUrl,
+    previewPage,
+    previewText,
+    isPreviewLoading,
+    onClose,
+}) {
+    if (!document && !isPreviewLoading) {
+        return null;
+    }
+
+    const pageParam =
+        previewPage && previewPage > 0
+            ? `#page=${previewPage}`
+            : "";
+
+    const iframeSrc =
+        previewUrl && pageParam
+            ? `${previewUrl}${pageParam}`
+            : previewUrl;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+            <div className="flex h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl">
+
+                <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-800 bg-slate-900 px-5 py-3">
+                    <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-200">
+                            {document?.document_name ||
+                                document?.filename ||
+                                "Document Preview"}
+                        </p>
+
+                        {previewPage && (
+                            <p className="truncate text-xs text-slate-500">
+                                Jumping to page {previewPage}
+                                {previewText && " · Matched text shown below"}
+                            </p>
+                        )}
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-800 hover:text-slate-200"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+
+                <div className="flex min-h-0 flex-1">
+                    {previewText && (
+                        <div className="w-80 shrink-0 border-r border-slate-800 bg-slate-900/50 overflow-y-auto p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                                <BookOpen size={14} className="text-blue-400" />
+                                <span className="text-xs font-semibold text-slate-300">
+                                    Matched Text
+                                </span>
+                            </div>
+
+                            <p className="text-xs leading-5 text-slate-400 whitespace-pre-wrap">
+                                {previewText}
+                            </p>
+                        </div>
+                    )}
+
+                    <div className="flex-1 min-h-0 bg-slate-900">
+                        {isPreviewLoading ? (
+                            <div className="flex h-full items-center justify-center">
+                                <Loader2
+                                    size={24}
+                                    className="text-blue-400 animate-spin"
+                                />
+                            </div>
+                        ) : (
+                            <iframe
+                                title="Document Preview"
+                                src={iframeSrc}
+                                className="h-full w-full border-0"
+                            />
+                        )}
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

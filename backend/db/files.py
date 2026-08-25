@@ -458,10 +458,93 @@ def insert_file_record(
         else None
     )
 
-    if new_record:
-        trigger_processing_webhook(new_record)
+    trigger_processing_webhook(new_record)
 
     return new_record
+
+
+def trigger_processing_webhook(file_record):
+    """Trigger the backend document-processing webhook."""
+
+    webhook_secret = os.getenv("WEBHOOK_SECRET")
+
+    backend_url = os.getenv(
+        "API_BASE_URL",
+        "http://localhost:8001",
+    )
+
+    url = (
+        f"{backend_url.rstrip('/')}"
+        "/webhooks/supabase/files"
+    )
+
+    headers = {
+        "Content-Type": "application/json",
+    }
+
+    if webhook_secret:
+        headers["X-Webhook-Secret"] = webhook_secret
+
+    payload = json.dumps(file_record).encode("utf-8")
+
+    print(
+        "=================================================="
+    )
+    print("TRIGGERING DOCUMENT PROCESSING")
+    print(f"URL: {url}")
+    print(f"FILE ID: {file_record.get('file_id')}")
+    print(f"FILENAME: {file_record.get('filename')}")
+    print(f"USER ID: {file_record.get('user_id')}")
+    print(f"OWNER EMAIL: {file_record.get('owner_email')}")
+    print(
+        "=================================================="
+    )
+
+    request = Request(
+        url,
+        data=payload,
+        headers=headers,
+        method="POST",
+    )
+
+    try:
+        with urlopen(
+            request,
+            timeout=10,
+        ) as response:
+
+            response_body = (
+                response.read()
+                .decode("utf-8")
+            )
+
+            print(
+                "PROCESSING WEBHOOK RESPONSE:",
+                response.status,
+                response_body,
+            )
+
+            return json.loads(response_body)
+
+    except Exception as error:
+
+        print(
+            "=================================================="
+        )
+        print(
+            "PROCESSING WEBHOOK FAILED"
+        )
+        print(
+            f"FILE: {file_record.get('filename')}"
+        )
+        print(
+            f"ERROR: {error}"
+        )
+        print(
+            "=================================================="
+        )
+
+        return None
 
 
 # ============================================================================
@@ -667,6 +750,7 @@ def get_document_file_url(
 def delete_file_from_storage(
     filename,
     user_id,
+    owner_email=None,
 ):
     """
     Remove a user's stored file.
@@ -674,6 +758,9 @@ def delete_file_from_storage(
     Storage path:
 
         documents/<user_id>/<filename>
+
+    owner_email is accepted for API compatibility but is not used
+    for storage-path resolution. User isolation is based on user_id.
     """
 
     bucket = get_bucket_name()
@@ -684,20 +771,17 @@ def delete_file_from_storage(
     )
 
     try:
-
         return supabase.storage.from_(bucket).remove(
             [storage_path]
         )
 
     except Exception as exc:
-
         print(
             f"Failed to delete storage file "
             f"'{storage_path}': {exc}"
         )
 
         return []
-
 
 def delete_file_record(
     file_id,

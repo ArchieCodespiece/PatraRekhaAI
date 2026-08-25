@@ -61,17 +61,6 @@ def list_document_metadata_by_file_ids(file_ids: list[str]):
 
     return response.data
 
-
-def list_document_metadata():
-    response = (
-        supabase.table(DOCUMENT_METADATA_TABLE)
-        .select(DOCUMENT_METADATA_SELECT_COLUMNS)
-        .execute()
-    )
-
-    return response.data
-
-
 def delete_document_metadata(file_id: str):
     """Delete the metadata row for a file (idempotent)."""
     UUID(str(file_id))

@@ -78,11 +78,19 @@ SUMMARIZATION_PIPELINE_DIR = (
     / "summarization-deadline"
 )
 
+DOCUMENT_PREPROCESSING_DIR = (
+    PROJECT_ROOT
+    / "document preprocessing"
+)
+
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 if str(SUMMARIZATION_PIPELINE_DIR) not in sys.path:
     sys.path.insert(0, str(SUMMARIZATION_PIPELINE_DIR))
+
+if str(DOCUMENT_PREPROCESSING_DIR) not in sys.path:
+    sys.path.insert(0, str(DOCUMENT_PREPROCESSING_DIR))
 
 
 # ============================================================================
@@ -334,15 +342,19 @@ def is_document_attachment(
     )
 
 
-def is_pdf_attachment(
+def is_processable_document(
     filename: str,
     content_type: str,
 ) -> bool:
-    """Return True when an attachment is a PDF."""
+    """Return True for supported document types."""
+
+    from document_preprocessing.converter import (
+        is_supported_document,
+    )
 
     return (
-        filename.lower().endswith(".pdf")
-        or content_type == "application/pdf"
+        is_supported_document(filename)
+        or content_type in DOCUMENT_CONTENT_TYPES
     )
 
 
@@ -538,7 +550,7 @@ def process_metadata_for_attachment(
     filename,
     content,
 ):
-    """Run metadata extraction for a stored PDF."""
+    """Run metadata extraction for a stored document."""
 
     if not file_record:
         return
@@ -550,25 +562,36 @@ def process_metadata_for_attachment(
     if not file_id:
         return
 
+    from document_preprocessing.converter import convert_to_pdf
+
     with tempfile.TemporaryDirectory(
         prefix="patrarekha-metadata-"
     ) as temp_dir:
 
-        pdf_path = (
+        original_path = (
             Path(temp_dir)
             / filename
         )
 
-        pdf_path.write_bytes(
+        original_path.write_bytes(
             content
         )
+
+        processing_path = original_path
+        if original_path.suffix.lower() != ".pdf":
+            pdf_path = (
+                Path(temp_dir)
+                / f"{original_path.stem}.pdf"
+            )
+            convert_to_pdf(original_path, pdf_path)
+            processing_path = pdf_path
 
         process_pdf_metadata = (
             load_summarization_pipeline()
         )
 
         process_pdf_metadata(
-            pdf_path=pdf_path,
+            document_path=processing_path,
             file_id=str(file_id),
         )
 
@@ -807,10 +830,10 @@ def store_message(
         )
 
         # --------------------------------------------------------------
-        # PDF metadata processing
+        # Document metadata processing
         # --------------------------------------------------------------
 
-        if is_pdf_attachment(
+        if is_processable_document(
             stored_name,
             content_type,
         ):

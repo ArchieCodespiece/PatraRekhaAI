@@ -19,6 +19,12 @@ pdfminer.six
 pypdfium2
 shapely
 
+# --- Document conversion dependencies ---
+fpdf2
+python-docx
+python-pptx
+openpyxl
+
 # --- AI Pipeline Dependencies ---
 google-genai>=1.28.0
 pinecone>=7.3.0

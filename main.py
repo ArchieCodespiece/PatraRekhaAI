@@ -1,4 +1,4 @@
-"""Single-entrypoint pipeline that processes a PDF end-to-end."""
+"""Single-entrypoint pipeline that processes a document end-to-end."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import importlib.util
 import inspect
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -95,6 +96,7 @@ preprocess_document = doc_prep.preprocess_document
 
 from Chunking.pipeline import ChunkPipeline
 from embedding.pipeline import EmbeddingPipeline
+from retrieval.pipeline import RetrievalPipeline
 from vectorstore.pipeline import VectorStorePipeline
 
 
@@ -166,7 +168,7 @@ def run_document_preprocessing(
 # ============================================================================
 
 def run_pipeline(
-    pdf_path: str | Path,
+    input_path: str | Path,
     cleanup_input: bool = False,
     owner_email: str | None = None,
     user_id: str | None = None,
@@ -196,18 +198,38 @@ def run_pipeline(
         This must match the namespace used by the FastAPI API.
     """
 
-    pdf_path = Path(pdf_path).resolve()
+    from document_preprocessing.converter import (
+        convert_to_pdf,
+        is_supported_document,
+    )
+
+    input_path = Path(input_path).resolve()
+
+    if not is_supported_document(input_path):
+        raise ValueError(
+            f"Unsupported file type: {input_path.suffix}. "
+            f"Supported: .pdf, .docx, .doc, .pptx, .ppt, "
+            f".xlsx, .xls, .txt, .csv"
+        )
+
+    temp_pdf = None
+    processing_path = input_path
+
+    if input_path.suffix.lower() != ".pdf":
+        temp_dir = (
+            Path(tempfile.gettempdir())
+            / "patrarekha-pipeline"
+        )
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_pdf = temp_dir / f"{input_path.stem}.pdf"
+        convert_to_pdf(input_path, temp_pdf)
+        processing_path = temp_pdf
 
     json_path: Path | None = None
 
-    if not pdf_path.exists():
+    if not processing_path.exists():
         raise FileNotFoundError(
-            f"PDF not found: {pdf_path}"
-        )
-
-    if pdf_path.suffix.lower() != ".pdf":
-        raise ValueError(
-            f"Expected a .pdf file, got: {pdf_path.suffix}"
+            f"Document not found: {processing_path}"
         )
 
     try:
@@ -220,7 +242,7 @@ def run_pipeline(
         print("  PatraRekha - Document Ingestion Pipeline")
         print("=" * 65)
 
-        print(f"\n  Input : {pdf_path}")
+        print(f"\n  Input : {processing_path}")
 
         if user_id:
             print(f"  User  : {user_id}")
@@ -273,7 +295,7 @@ def run_pipeline(
         t0 = time.perf_counter()
 
         json_path = run_document_preprocessing(
-            pdf_path=pdf_path,
+            pdf_path=processing_path,
             owner_email=owner_email,
             user_id=user_id,
             file_id=file_id,
@@ -390,7 +412,7 @@ def run_pipeline(
         print("=" * 65)
 
         print(
-            f"  Document : {pdf_path.name}"
+            f"  Document : {processing_path.name}"
         )
 
         print(
@@ -444,12 +466,96 @@ def run_pipeline(
 
     finally:
 
+        if temp_pdf and temp_pdf.exists():
+
+            for attempt in range(3):
+
+                try:
+
+                    temp_pdf.unlink(
+                        missing_ok=True
+                    )
+
+                    break
+
+                except PermissionError:
+
+                    if attempt < 2:
+                        time.sleep(0.5)
+
         if cleanup_input:
 
             cleanup_pipeline_input(
-                pdf_path,
+                input_path,
                 json_path,
             )
+
+
+def run_retrieval(
+    query: str,
+    document_ids: list[str],
+    top_k: int = 5,
+    score_threshold: float | None = None,
+) -> None:
+    """
+    Run the retrieval pipeline against the vector store.
+
+    Parameters
+    ----------
+    query : str
+        User search question.
+    document_ids : list[str]
+        IDs of documents to restrict the search to.
+    top_k : int
+        Number of chunks to retrieve.
+    score_threshold : float | None
+        Minimum similarity score to include a chunk.
+    """
+
+    pipeline = RetrievalPipeline()
+
+    result = pipeline.retrieve(
+        query=query,
+        document_ids=document_ids,
+    )
+
+    print("=" * 65)
+    print("  PatraRekha - Retrieval")
+    print("=" * 65)
+    print(f"\n  Query   : {query}")
+    print(f"  Documents: {', '.join(result.documents_queried)}")
+    print(f"  Top K   : {top_k}")
+    print()
+
+    chunks = result.chunks
+
+    if score_threshold is not None:
+        chunks = [
+            chunk
+            for chunk in chunks
+            if chunk.score >= score_threshold
+        ]
+
+    if not chunks:
+        print("  No chunks matched the query.")
+        return
+
+    for rank, chunk in enumerate(chunks, start=1):
+        print("-" * 65)
+        print(
+            f"  [{rank}] {chunk.document_name} "
+            f"(pages {chunk.page_start}-{chunk.page_end})"
+        )
+        print(f"       Score : {chunk.score:.4f}")
+        print(f"       Chunk : {chunk.chunk_id}")
+        print()
+        print(f"  {chunk.text[:500]}")
+        print("...")
+
+    print()
+    print("=" * 65)
+    print(f"  Retrieved {len(chunks)} chunks")
+    print("=" * 65)
 
 
 # ============================================================================
@@ -457,30 +563,36 @@ def run_pipeline(
 # ============================================================================
 
 def cleanup_pipeline_input(
-    pdf_path: Path,
+    input_path: Path,
     json_path: Path | None = None,
 ) -> None:
     """Delete temporary pipeline input/output files."""
 
-    paths = [pdf_path]
+    import time
+
+    paths = [input_path]
 
     if json_path:
         paths.append(json_path)
 
     for path in paths:
 
-        try:
+        for attempt in range(3):
 
-            path.unlink(
-                missing_ok=True
-            )
+            try:
 
-        except OSError as exc:
+                path.unlink(
+                    missing_ok=True
+                )
 
-            print(
-                "Warning: could not delete "
-                f"temporary file {path}: {exc}"
-            )
+                break
+
+            except PermissionError:
+
+                if attempt < 2:
+                    time.sleep(0.5)
+                else:
+                    pass
 
 
 # ============================================================================
@@ -506,7 +618,7 @@ if __name__ == "__main__":
         nargs="?",
         default=str(DEFAULT_PDF),
         help=(
-            "Path to the PDF to process. "
+            "Path to the document to process. "
             "Uses the sample PDF when omitted."
         ),
     )
@@ -520,7 +632,7 @@ if __name__ == "__main__":
         "--cleanup-input",
         action="store_true",
         help=(
-            "Delete the input PDF and generated "
+            "Delete the input document and generated "
             "sidecar JSON after the pipeline ends."
         ),
     )
@@ -569,6 +681,50 @@ if __name__ == "__main__":
 
 
     # ------------------------------------------------------------------------
+    # RETRIEVAL MODE
+    # ------------------------------------------------------------------------
+
+    parser.add_argument(
+        "--query",
+        default="",
+        help=(
+            "Run retrieval mode with this query "
+            "instead of the ingestion pipeline."
+        ),
+    )
+
+    parser.add_argument(
+        "--document-ids",
+        nargs="+",
+        default=[],
+        help=(
+            "Document IDs to restrict retrieval to "
+            "when using --query."
+        ),
+    )
+
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=5,
+        help=(
+            "Number of chunks to retrieve in "
+            "retrieval mode."
+        ),
+    )
+
+    parser.add_argument(
+        "--score-threshold",
+        type=float,
+        default=None,
+        help=(
+            "Minimum similarity score for retrieved "
+            "chunks in retrieval mode."
+        ),
+    )
+
+
+    # ------------------------------------------------------------------------
     # PARSE ARGUMENTS
     # ------------------------------------------------------------------------
 
@@ -577,12 +733,26 @@ if __name__ == "__main__":
 
     # ------------------------------------------------------------------------
     # RUN PIPELINE
-    # ------------------------------------------------------------------------
 
-    run_pipeline(
-        args.pdf_path,
-        cleanup_input=args.cleanup_input,
-        owner_email=args.owner_email or None,
-        user_id=args.user_id or None,
-        file_id=args.file_id or None,
-    )
+    if args.query:
+
+        if not args.document_ids:
+            raise SystemExit(
+                "Error: --document-ids is required when using --query."
+            )
+
+        run_retrieval(
+            query=args.query,
+            document_ids=args.document_ids,
+            top_k=args.top_k,
+            score_threshold=args.score_threshold,
+        )
+
+    else:
+        run_pipeline(
+            args.pdf_path,
+            cleanup_input=args.cleanup_input,
+            owner_email=args.owner_email or None,
+            user_id=args.user_id or None,
+            file_id=args.file_id or None,
+        )

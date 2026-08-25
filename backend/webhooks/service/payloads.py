@@ -28,6 +28,7 @@ def document_from_supabase_payload(payload):
         "file_url": file_url,
         "file_type": record.get("file_type") or record.get("content_type"),
         "file_size": record.get("file_size") or record.get("size"),
+        "user_id": record.get("user_id"),
         "owner_email": record.get("owner_email"),
         "created_at": record.get("created_at"),
         "uploaded_at": record.get("uploaded_at"),

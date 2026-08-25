@@ -619,10 +619,10 @@ export default function Documents() {
                 if (
                     !file.name
                         .toLowerCase()
-                        .endsWith(".pdf")
+                        .match(/\.(pdf|docx|doc|pptx|ppt|xlsx|xls|txt|csv)$/i)
                 ) {
                     setUploadError(
-                        "Only PDF documents can be uploaded."
+                        `Unsupported file type. Supported: PDF, DOCX, DOC, PPTX, PPT, XLSX, XLS, TXT, CSV.`
                     );
 
                     return;
@@ -805,7 +805,7 @@ export default function Documents() {
 
                                 {isUploading
                                     ? "Uploading..."
-                                    : "Upload PDF"}
+                                    : "Upload Document"}
                             </button>
 
                             <input
@@ -813,7 +813,7 @@ export default function Documents() {
                                     fileInputRef
                                 }
                                 type="file"
-                                accept=".pdf,application/pdf"
+                                accept=".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,text/csv"
                                 onChange={
                                     handleFileSelected
                                 }

@@ -20,10 +20,42 @@ Final Chunks
 """
 
 import json
+import re
 from pathlib import Path
 
 from .chunking import ChunkingPipeline
 from .models import Document, Page, Table
+
+FILE_ID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+
+SHORT_ID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{12}-"
+)
+
+
+def _clean_stem(stem: str) -> str:
+    cleaned = stem
+
+    while True:
+        new = FILE_ID_PATTERN.sub(
+            "",
+            cleaned,
+        ).lstrip("-_")
+
+        new = SHORT_ID_PATTERN.sub(
+            "",
+            new,
+        ).lstrip("-_")
+
+        if new == cleaned:
+            break
+
+        cleaned = new
+
+    return cleaned
 
 
 class ChunkPipeline:
@@ -71,8 +103,12 @@ class ChunkPipeline:
                 )
             )
 
+        raw_stem = Path(json_path).stem
+        document_id = raw_stem
+        document_name = _clean_stem(raw_stem)
+
         return Document(
-            document_id=Path(json_path).stem,
-            document_name=Path(json_path).stem,
+            document_id=document_id,
+            document_name=document_name,
             pages=pages,
         )

@@ -99,7 +99,7 @@ export default function DashboardHome() {
             icon: FileText,
             title: "Documents",
             desc: "Browse, upload, and manage your document library with ease.",
-            href: "/documents",
+            href: "/document",
         },
         {
             icon: MessageSquareText,

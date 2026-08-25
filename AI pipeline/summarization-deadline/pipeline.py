@@ -1,4 +1,4 @@
-"""Simple PDF summary and deadline extraction pipeline."""
+"""Simple document summary and deadline extraction pipeline."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import json
 import os
 import re
 import sys
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -23,38 +25,80 @@ if load_dotenv:
     load_dotenv(ROOT / "backend" / ".env")
     load_dotenv(ROOT / "AI pipeline" / ".env")
 
-DEFAULT_MODEL = os.getenv("METADATA_LLM_MODEL", "llama-3.1-8b-instant")
+DEFAULT_MODEL = os.getenv("METADATA_LLM_MODEL", "openai/gpt-oss-20b")
 MAX_TEXT_CHARS = int(os.getenv("METADATA_MAX_TEXT_CHARS", "50000"))
 
 
-def process_pdf_metadata(pdf_path: str | Path, file_id: str) -> dict[str, Any]:
+def process_pdf_metadata(
+    document_path: str | Path,
+    file_id: str,
+) -> dict[str, Any]:
     """
-    Read a PDF, ask the LLM for structured metadata, and store it in Supabase.
+    Read a document, ask the LLM for structured metadata, and store it in Supabase.
+
+    Supported formats: PDF, DOCX, DOC, PPTX, PPT, XLSX, XLS, TXT, CSV.
+    Non-PDF documents are converted to PDF before text extraction.
     """
-
-    text = extract_pdf_text(pdf_path, max_chars=MAX_TEXT_CHARS)
-    metadata = extract_metadata_with_llm(text)
-
-    # Imported inside the function so this pipeline can be tested without the
-    # backend package on sys.path.
-    from db.document_metadata import upsert_document_metadata
-    from db.files import mark_file_summarized
-
-    upsert_document_metadata(
-        file_id=file_id,
-        file_heading=metadata["file_heading"],
-        summarization=metadata["summarization"],
-        timeline_json=metadata["timeline_json"],
+    from document_preprocessing.converter import (
+        convert_to_pdf,
+        is_supported_document,
     )
-    mark_file_summarized(file_id)
 
-    return metadata
+    document_path = Path(document_path)
+
+    if not is_supported_document(document_path):
+        raise ValueError(
+            f"Unsupported file type: {document_path.suffix}. "
+            f"Supported: .pdf, .docx, .doc, .pptx, .ppt, "
+            f".xlsx, .xls, .txt, .csv"
+        )
+
+    temp_pdf = None
+    processing_path = document_path
+
+    if document_path.suffix.lower() != ".pdf":
+        temp_dir = (
+            Path(tempfile.gettempdir())
+            / "patrarekha-summarization"
+        )
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_pdf = temp_dir / f"{document_path.stem}.pdf"
+        convert_to_pdf(document_path, temp_pdf)
+        processing_path = temp_pdf
+
+    try:
+        text = extract_pdf_text(processing_path, max_chars=MAX_TEXT_CHARS)
+        metadata = extract_metadata_with_llm(text)
+
+        # Imported inside the function so this pipeline can be tested without the
+        # backend package on sys.path.
+        from db.document_metadata import upsert_document_metadata
+        from db.files import mark_file_summarized
+
+        upsert_document_metadata(
+            file_id=file_id,
+            file_heading=metadata["file_heading"],
+            summarization=metadata["summarization"],
+            timeline_json=metadata["timeline_json"],
+        )
+        mark_file_summarized(file_id)
+
+        return metadata
+    finally:
+        if temp_pdf and temp_pdf.exists():
+            for attempt in range(3):
+                try:
+                    temp_pdf.unlink(missing_ok=True)
+                    break
+                except PermissionError:
+                    if attempt < 2:
+                        time.sleep(0.5)
 
 
 def extract_pdf_text(pdf_path: str | Path, max_chars: int = MAX_TEXT_CHARS) -> str:
     pdf_path = Path(pdf_path)
     if not pdf_path.exists():
-        raise FileNotFoundError(f"PDF not found: {pdf_path}")
+        raise FileNotFoundError(f"Document not found: {pdf_path}")
 
     pages = []
     import pdfplumber
@@ -165,9 +209,9 @@ def normalize_metadata_json(data: dict[str, Any]) -> dict[str, Any]:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Extract and store PDF metadata.")
-    parser.add_argument("pdf_path", help="Path to the PDF file.")
-    parser.add_argument("file_id", help="Supabase files.file_id for this PDF.")
+    parser = argparse.ArgumentParser(description="Extract and store document metadata.")
+    parser.add_argument("document_path", help="Path to the document file.")
+    parser.add_argument("file_id", help="Supabase files.file_id for this document.")
     args = parser.parse_args()
 
-    print(json.dumps(process_pdf_metadata(args.pdf_path, args.file_id), indent=2))
+    print(json.dumps(process_pdf_metadata(args.document_path, args.file_id), indent=2))

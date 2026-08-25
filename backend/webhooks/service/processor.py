@@ -45,31 +45,34 @@ TEMP_PDF_DIR = (
 
 async def process_document(document):
     """
-    Process a document received through the Supabase webhook.
+    Process a document received through the document queue.
 
-    Expected webhook document payload:
-
-        {
-            "file_id": "...",
-            "user_id": "...",
-            "owner_email": "...",
-            ...
-        }
-
-    The authoritative file record is loaded from the database before
-    downloading the file.
+    The document record is loaded authoritatively from the
+    files table before downloading and processing.
     """
 
     file_id = document.get("file_id")
 
+    logger.info(
+        "=================================================="
+    )
+    logger.info("PROCESS_DOCUMENT START")
+    logger.info("file_id=%s", file_id)
+    logger.info("filename=%s", document.get("filename"))
+    logger.info("user_id=%s", document.get("user_id"))
+    logger.info("owner_email=%s", document.get("owner_email"))
+    logger.info(
+        "=================================================="
+    )
+
     if not file_id:
         raise ValueError(
-            "Webhook document is missing 'file_id'."
+            "Document is missing 'file_id'."
         )
 
-    # ------------------------------------------------------------------
-    # Get authoritative database record
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------
+    # Load authoritative DB record
+    # ----------------------------------------------------------
 
     document_record = await asyncio.to_thread(
         get_document,
@@ -83,9 +86,14 @@ async def process_document(document):
             f"Document not found: {file_id}"
         )
 
-    # ------------------------------------------------------------------
-    # Make sure the record has a user_id
-    # ------------------------------------------------------------------
+    logger.info(
+        "Document found in files table: %s",
+        document_record,
+    )
+
+    # ----------------------------------------------------------
+    # User ID
+    # ----------------------------------------------------------
 
     user_id = document_record.get("user_id")
 
@@ -94,11 +102,9 @@ async def process_document(document):
             f"Document {file_id} does not have a user_id."
         )
 
-    # ------------------------------------------------------------------
-    # Download the document from:
-    #
-    # public/documents/<user_id>/<filename>
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------
+    # Download
+    # ----------------------------------------------------------
 
     content = await asyncio.to_thread(
         download_document_content,
@@ -106,11 +112,46 @@ async def process_document(document):
         user_id,
     )
 
-    # ------------------------------------------------------------------
-    # Run AI/document-processing pipeline
-    # ------------------------------------------------------------------
+    if not content:
+        raise ValueError(
+            f"Downloaded document is empty: {file_id}"
+        )
+
+    logger.info(
+        "Downloaded %s bytes for document %s",
+        len(content),
+        file_id,
+    )
+
+    # ----------------------------------------------------------
+    # Run AI pipeline
+    # ----------------------------------------------------------
 
     await run_document_pipeline(
+        document_record,
+        content,
+    )
+
+    logger.info(
+        "AI pipeline completed for document %s",
+        file_id,
+    )
+
+    # ----------------------------------------------------------
+    # Run summarization / deadline extraction
+    # ----------------------------------------------------------
+    #
+    # The main pipeline handles OCR, chunking, embedding and
+    # Pinecone upserts but does NOT extract document metadata.
+    #
+    # We run the summarization pipeline here so that the
+    # frontend can display document details (summary + deadlines)
+    # after the document finishes processing.
+    #
+    # If metadata already exists (e.g. from a previous run or
+    # from Gmail ingestion), skip to avoid duplicate work.
+
+    await _run_summarization_if_needed(
         document_record,
         content,
     )
@@ -285,6 +326,117 @@ def _run_document_pipeline_sync(
         )
 
 
+async def _run_summarization_if_needed(
+    document_record,
+    content,
+):
+    """
+    Run the summarization/deadline extraction pipeline if the
+    document does not already have metadata stored.
+    """
+
+    file_id = str(
+        document_record.get("file_id") or ""
+    )
+
+    if not file_id:
+        return
+
+    # ------------------------------------------------------------------
+    # Check whether metadata already exists
+    # ------------------------------------------------------------------
+
+    existing_metadata = await asyncio.to_thread(
+        _lookup_document_metadata,
+        file_id,
+    )
+
+    if existing_metadata:
+        logger.info(
+            "Metadata already exists for document %s; "
+            "skipping summarization.",
+            file_id,
+        )
+        return
+
+    # ------------------------------------------------------------------
+    # Write a temporary PDF for the summarization pipeline
+    # ------------------------------------------------------------------
+
+    pdf_path = write_temp_pdf(
+        document_record,
+        content,
+    )
+
+    logger.info(
+        "Running summarization pipeline for document %s",
+        file_id,
+    )
+
+    try:
+
+        await asyncio.to_thread(
+            _run_summarization_sync,
+            pdf_path,
+            file_id,
+        )
+
+    except Exception as exc:
+
+        logger.error(
+            "Summarization failed for document %s: %s",
+            file_id,
+            exc,
+        )
+
+    finally:
+
+        cleanup_temp_artifacts(
+            pdf_path
+        )
+
+
+def _lookup_document_metadata(file_id):
+    """
+    Return the existing metadata row for a file, or None.
+    """
+
+    from db.document_metadata import (
+        list_document_metadata_by_file_ids,
+    )
+
+    rows = list_document_metadata_by_file_ids(
+        [file_id]
+    )
+
+    return rows[0] if rows else None
+
+
+def _run_summarization_sync(document_path, file_id):
+    """
+    Synchronous wrapper around the summarization pipeline.
+    """
+
+    import sys
+    from pathlib import Path
+
+    summarization_dir = (
+        Path(__file__).resolve().parents[3]
+        / "AI pipeline"
+        / "summarization-deadline"
+    )
+
+    if str(summarization_dir) not in sys.path:
+        sys.path.insert(0, str(summarization_dir))
+
+    from pipeline import process_pdf_metadata
+
+    process_pdf_metadata(
+        document_path=document_path,
+        file_id=file_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Temporary PDF handling
 # ---------------------------------------------------------------------------
@@ -294,9 +446,10 @@ def write_temp_pdf(
     content,
 ):
     """
-    Write downloaded document content to a temporary PDF.
+    Write downloaded document content to a temporary file.
 
-    The pipeline operates on a local PDF path.
+    Non-PDF documents are converted to PDF so the pipeline can
+    process them unchanged.
     """
 
     if not content:
@@ -305,32 +458,63 @@ def write_temp_pdf(
             f"{document['file_id']}"
         )
 
-    filename = safe_filename(
-        document.get("filename")
-        or f"{document['file_id']}.pdf"
+    from document_preprocessing.converter import (
+        convert_to_pdf,
+        is_supported_document,
     )
 
-    if not filename.lower().endswith(".pdf"):
-        filename = f"{filename}.pdf"
+    filename = safe_filename(
+        document.get("filename")
+        or f"{document['file_id']}"
+    )
 
     TEMP_PDF_DIR.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    pdf_path = (
+    original_path = (
         TEMP_PDF_DIR
         / f"{document['file_id']}-{filename}"
     )
 
-    pdf_path.write_bytes(content)
+    original_path.write_bytes(content)
 
-    logger.info(
-        "Temporary PDF created at %s",
-        pdf_path,
-    )
+    if (
+        not is_supported_document(original_path)
+        or original_path.suffix.lower() != ".pdf"
+    ):
+        pdf_path = (
+            TEMP_PDF_DIR
+            / f"{document['file_id']}-{original_path.stem}.pdf"
+        )
+        convert_to_pdf(original_path, pdf_path)
 
-    return pdf_path
+        # On Windows the file can be temporarily locked by
+        # antivirus or another process after conversion.
+        # Retry a few times before giving up.
+        _safe_unlink(original_path)
+
+        return pdf_path
+
+    return original_path
+
+
+def _safe_unlink(path, attempts=3, delay=0.5):
+    """
+    Remove a file, retrying on Windows permission errors.
+    """
+    import time
+
+    for attempt in range(attempts):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if attempt < attempts - 1:
+                time.sleep(delay)
+            else:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -440,9 +624,7 @@ def cleanup_temp_artifacts(
 
         try:
 
-            path.unlink(
-                missing_ok=True
-            )
+            _safe_unlink(path)
 
         except OSError:
 
