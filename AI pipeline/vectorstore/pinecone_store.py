@@ -147,24 +147,33 @@ class PineconeStore:
         embedding: List[float],
         top_k: int = 5,
         namespace: str | None = None,
+        filter: dict | None = None,
     ):
         """
         Search similar vectors.
 
         When ``namespace`` is provided (or the store was constructed with one),
         the query is restricted to that Pinecone namespace.
+
+        When ``filter`` is provided, the query is restricted to vectors whose
+        metadata matches the filter expression.
         """
 
         ns = namespace if namespace is not None else self.namespace
         if not USE_NAMESPACES or not ns:
             ns = None
 
-        return self.index.query(
-            vector=embedding,
-            top_k=top_k,
-            include_metadata=True,
-            namespace=ns,
-        )
+        kwargs = {
+            "vector": embedding,
+            "top_k": top_k,
+            "include_metadata": True,
+            "namespace": ns,
+        }
+
+        if filter:
+            kwargs["filter"] = filter
+
+        return self.index.query(**kwargs)
 
     # ------------------------------------------------------------------
     # Delete

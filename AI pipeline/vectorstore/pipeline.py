@@ -61,6 +61,7 @@ class VectorStorePipeline:
         embedding: List[float],
         top_k: int = 5,
         namespace: str | None = None,
+        filter: dict | None = None,
     ):
         """
         Search for similar vectors.
@@ -73,6 +74,8 @@ class VectorStorePipeline:
             Number of nearest neighbours.
         namespace : str | None
             Per-user namespace to restrict the search.
+        filter : dict | None
+            Optional Pinecone metadata filter expression.
 
         Returns
         -------
@@ -83,6 +86,7 @@ class VectorStorePipeline:
             embedding=embedding,
             top_k=top_k,
             namespace=namespace,
+            filter=filter,
         )
 
     # ------------------------------------------------------------------

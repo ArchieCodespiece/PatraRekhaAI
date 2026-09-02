@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -139,9 +139,39 @@ export function clearStoredAuthUser() {
         return;
     }
 
+    /*
+     * Remove the primary PatraRekha user cache.
+     */
     window.localStorage.removeItem(
         storageKey("auth_user")
     );
+
+    /*
+     * Defence-in-depth: remove any other patrerekha:* keys
+     * that may have accumulated.
+     */
+    const keysToRemove = [];
+
+    for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (k && k.startsWith("patrerekha:")) {
+            keysToRemove.push(k);
+        }
+    }
+
+    keysToRemove.forEach((k) =>
+        window.localStorage.removeItem(k)
+    );
+
+    /*
+     * Clear sessionStorage so no stale tab-level auth state
+     * survives the logout.
+     */
+    try {
+        window.sessionStorage.clear();
+    } catch {
+        // sessionStorage may be unavailable in some contexts.
+    }
 }
 
 
@@ -738,6 +768,17 @@ export async function signInWithGoogle() {
 
             options: {
                 redirectTo,
+
+                /*
+                 * Force the Google account-selection screen every
+                 * time so the user can choose a different Gmail
+                 * account instead of silently reusing the previous
+                 * one.
+                 */
+                queryParams: {
+                    prompt: "select_account",
+                    access_type: "offline",
+                },
             },
         });
 
@@ -844,6 +885,18 @@ export function buildSupabaseOAuthUrl(
         "redirect_to",
         redirectTo
     );
+
+    /*
+     * Force the Google account-selection screen on every login.
+     *
+     * Without this Google silently reuses the last signed-in
+     * account, making it impossible to switch to a different
+     * Gmail account after logout.
+     */
+    if (provider === "google") {
+        url.searchParams.set("prompt", "select_account");
+        url.searchParams.set("access_type", "offline");
+    }
 
     return url.toString();
 }

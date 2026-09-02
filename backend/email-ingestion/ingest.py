@@ -78,19 +78,11 @@ SUMMARIZATION_PIPELINE_DIR = (
     / "summarization-deadline"
 )
 
-DOCUMENT_PREPROCESSING_DIR = (
-    PROJECT_ROOT
-    / "document preprocessing"
-)
-
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 if str(SUMMARIZATION_PIPELINE_DIR) not in sys.path:
     sys.path.insert(0, str(SUMMARIZATION_PIPELINE_DIR))
-
-if str(DOCUMENT_PREPROCESSING_DIR) not in sys.path:
-    sys.path.insert(0, str(DOCUMENT_PREPROCESSING_DIR))
 
 
 # ============================================================================

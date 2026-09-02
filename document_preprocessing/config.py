@@ -50,11 +50,24 @@ def get_checkpoint_path(file_id: str | None = None, owner_email: str | None = No
 # OCR SETTINGS
 # ==========================================================
 
-# OCR language
-OCR_LANGUAGE = "en"
+# OCR language (PaddleOCR format)
+# Options: "en", "hi", "bn", "ta", "te", "mr", "gu", "kn", "ml", "pa", "or", "as", "ur"
+# Use "en" as default. For multilingual documents, consider "en" + specific language.
+# PaddleOCR supports multi-language models but they are slower.
+OCR_LANGUAGE = os.getenv("OCR_LANGUAGE", "en")
 
-# Minimum confidence score for accepted OCR text
-OCR_CONFIDENCE_THRESHOLD = 0.60
+# Enable automatic language detection during OCR
+# When True, the system attempts to detect the document language after extraction
+ENABLE_OCR_LANG_DETECTION = os.getenv("ENABLE_OCR_LANG_DETECTION", "true").lower() in ("true", "1", "yes")
+
+# Multi-language OCR support
+# Comma-separated list of additional languages to load for OCR
+# Leave empty for default (English only)
+OCR_ADDITIONAL_LANGUAGES = [
+    lang.strip()
+    for lang in os.getenv("OCR_ADDITIONAL_LANGUAGES", "").split(",")
+    if lang.strip()
+]
 
 # ==========================================================
 # PDF PROCESSING

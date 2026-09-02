@@ -3,20 +3,20 @@
 # ============================================================================
 
 from typing import List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
-    query: str
-    selected_documents: List[str]
-    conversation_id: str | None = None
-    owner_email: str | None = None
+    query: str = Field(..., min_length=1, max_length=4000)
+    selected_documents: List[str] = Field(..., max_length=50)
+    conversation_id: str | None = Field(None, max_length=100)
+    owner_email: str | None = Field(None, max_length=255)
 
 
 class DocumentSearchRequest(BaseModel):
-    query: str
-    owner_email: str | None = None
+    query: str = Field(..., min_length=1, max_length=4000)
+    owner_email: str | None = Field(None, max_length=255)
 
 
 class ConversationCreateRequest(BaseModel):
-    title: str | None = None
+    title: str | None = Field(None, max_length=200)

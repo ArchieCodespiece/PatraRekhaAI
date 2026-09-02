@@ -3,6 +3,7 @@ supabase
 fastapi
 uvicorn
 python-multipart
+slowapi
 groq
 google-genai
 tiktoken

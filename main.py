@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import inspect
 import sys
 import tempfile
@@ -19,7 +18,7 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
 
-DOCUMENT_PREPROCESSING_DIR = ROOT / "document preprocessing"
+DOCUMENT_PREPROCESSING_DIR = ROOT / "document_preprocessing"
 AI_PIPELINE_DIR = ROOT / "AI pipeline"
 
 for directory in (
@@ -66,28 +65,7 @@ DOC_PREPROCESSING_INIT = (
     DOCUMENT_PREPROCESSING_DIR / "__init__.py"
 )
 
-spec = importlib.util.spec_from_file_location(
-    "document_preprocessing",
-    DOC_PREPROCESSING_INIT,
-    submodule_search_locations=[
-        str(DOCUMENT_PREPROCESSING_DIR)
-    ],
-)
-
-if spec is None or spec.loader is None:
-    raise RuntimeError(
-        "Unable to load document preprocessing package."
-    )
-
-doc_prep = importlib.util.module_from_spec(spec)
-
-doc_prep.__package__ = "document_preprocessing"
-
-sys.modules["document_preprocessing"] = doc_prep
-
-spec.loader.exec_module(doc_prep)
-
-preprocess_document = doc_prep.preprocess_document
+from document_preprocessing import preprocess_document
 
 
 # ============================================================================

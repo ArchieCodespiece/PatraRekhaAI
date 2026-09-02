@@ -52,7 +52,7 @@ desktop.ini
 # ===========================================
 # Virtual Environment
 # ===========================================
-document preprocessing/DP/
+document_preprocessing/DP/
 
 # ===========================================
 # Python
@@ -211,3 +211,8 @@ AI pipeline/.env
 startlinux.md
 startwindows.md
 startwindows4me.md
+
+graphify-out/
+.claude/graphify/skills/
+SKILL.md
+CLAUDE.md

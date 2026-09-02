@@ -215,14 +215,14 @@ export function SpotlightCard({ children, className = "" }) {
             onMouseMove={handleMouseMove}
             onMouseEnter={() => setIsHovering(true)}
             onMouseLeave={() => setIsHovering(false)}
-            className={`relative overflow-hidden rounded-2xl border border-[#CABDB2]/40 bg-[#FFEAD5]/50 backdrop-blur-sm transition-all duration-300 hover:border-[#CA8A78]/70 hover:bg-[#F1DDCA] hover:shadow-xl hover:shadow-[#CA8A78]/10 ${className}`}
+            className={`relative overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-sm transition-all duration-300 hover:border-primary/70 hover:bg-card hover:shadow-xl hover:shadow-primary/15 ${className}`}
         >
             {/* Spotlight gradient overlay */}
             <div
                 className="pointer-events-none absolute inset-0 transition-opacity duration-300"
                 style={{
                     opacity: isHovering ? 1 : 0,
-                    background: `radial-gradient(600px circle at ${pos.x}px ${pos.y}px, rgba(202,138,120,0.12), transparent 40%)`,
+                    background: `radial-gradient(600px circle at ${pos.x}px ${pos.y}px, color-mix(in oklab, var(--primary) 18%, transparent), transparent 40%)`,
                 }}
             />
             <div className="relative z-10">{children}</div>

@@ -1,8 +1,16 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&family=Noto+Sans+Tamil:wght@400;500;600;700&family=Noto+Sans+Telugu:wght@400;500;600;700&family=Noto+Sans+Gujarati:wght@400;500;600;700&family=Noto+Sans+Kannada:wght@400;500;600;700&family=Noto+Sans+Malayalam:wght@400;500;600;700&family=Noto+Sans+Gurmukhi:wght@400;500;600;700&family=Noto+Sans+Odia:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;500;600;700&display=swap');
+
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+
+/* ==========================================================================
+   MULTILINGUAL FONT SUPPORT
+   Font stack covers Latin, Devanagari, Bengali, Tamil, Telugu, Gujarati,
+   Kannada, Malayalam, Gurmukhi, Odia, and Arabic (Urdu) scripts.
+   ========================================================================== */
 
 @theme inline {
   --color-background: var(--background);
@@ -48,7 +56,9 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Map legacy Tailwind colour utilities used in the UI to the warm brand palette. */
+/* Map legacy Tailwind colour utilities used in the UI to the warm brand palette.
+   Light mode keeps the exact brand hexes for visual identity. Dark mode overrides
+   each of these tokens via `.dark` below to provide a cohesive dark variant. */
 @theme {
   --color-slate-950: #FFFBF0;
   --color-slate-900: #FFEAD5;
@@ -60,33 +70,48 @@
   --color-slate-300: #413632;
   --color-slate-200: #413632;
   --color-slate-100: #413632;
+
   --color-blue-950: #FFEAD5;
   --color-blue-800: #CA8A78;
+  --color-blue-700: #CA8A78;
   --color-blue-600: #CA8A78;
   --color-blue-500: #CA8A78;
   --color-blue-400: #CA8A78;
   --color-blue-300: #CA8A78;
+
   --color-amber-500: #CA8A78;
   --color-amber-400: #413632;
+  --color-amber-300: #FFEAD5;
+
   --color-yellow-500: #CA8A78;
   --color-yellow-400: #413632;
+  --color-yellow-300: #FFEAD5;
+
+  --color-emerald-600: #413632;
+  --color-emerald-500: #CA8A78;
+  --color-emerald-400: #CABDB2;
+
+  --color-green-500: #CA8A78;
   --color-green-400: #CA8A78;
+
+  --color-red-600: #8C4F3E;
   --color-red-500: #CA8A78;
   --color-red-400: #413632;
+
   --color-rose-400: #CA8A78;
 }
 
 :root {
-  /* Fonts */
-  --font-sans: "Google Sans", "Anthropic Sans", Arial, sans-serif;
-  --font-heading: "Anthropic Serif", "Anthropic Sheriff", Georgia, serif;
+  /* Fonts — multilingual Noto Sans stack covering all supported scripts */
+  --font-sans: "Noto Sans", "Noto Sans Devanagari", "Noto Sans Bengali", "Noto Sans Tamil", "Noto Sans Telugu", "Noto Sans Gujarati", "Noto Sans Kannada", "Noto Sans Malayalam", "Noto Sans Gurmukhi", "Noto Sans Odia", "Noto Nastaliq Urdu", system-ui, -apple-system, sans-serif;
+  --font-heading: "Noto Sans", "Noto Sans Devanagari", "Noto Sans Bengali", "Noto Sans Tamil", "Noto Sans Telugu", "Noto Sans Gujarati", "Noto Sans Kannada", "Noto Sans Malayalam", "Noto Sans Gurmukhi", "Noto Sans Odia", "Noto Nastaliq Urdu", Georgia, serif;
 
   /* Colors based on user hexes:
-     Primary Background: #FFFBF0 (Soft Alabaster White)
-     Secondary/Card Background: #FFEAD5 (Peach Cream)
-     Primary Brand/Accent: #CA8A78 (Muted Coral/Rose)
-     Primary Text/Foreground: #413632 (Dark Espresso Brown)
-     Borders/Muted Elements: #CABDB2 (Soft Warm Gray/Clay)
+      Primary Background: #FFFBF0 (Soft Alabaster White)
+      Secondary/Card Background: #FFEAD5 (Peach Cream)
+      Primary Brand/Accent: #CA8A78 (Muted Coral/Rose)
+      Primary Text/Foreground: #413632 (Dark Espresso Brown)
+      Borders/Muted Elements: #CABDB2 (Soft Warm Gray/Clay)
   */
   --background: #FFFBF0;
   --foreground: #413632;
@@ -117,6 +142,93 @@
   --sidebar-ring: #CA8A78;
 }
 
+/* Dark mode overrides */
+.dark {
+  --background: #15100d;
+  --foreground: #efe4d8;
+  --card: #1f1814;
+  --card-foreground: #efe4d8;
+  --popover: #1f1814;
+  --popover-foreground: #efe4d8;
+  --primary: #d49484;
+  --primary-foreground: #1a1412;
+  --secondary: #2c231f;
+  --secondary-foreground: #efe4d8;
+  --muted: #2c231f;
+  --muted-foreground: #b9aa9c;
+  --accent: #d49484;
+  --accent-foreground: #1a1412;
+  --destructive: #d97060;
+  --border: #3a2f29;
+  --input: #2c231f;
+  --ring: #d49484;
+
+  --sidebar: #120c0a;
+  --sidebar-foreground: #efe4d8;
+  --sidebar-primary: #d49484;
+  --sidebar-primary-foreground: #1a1412;
+  --sidebar-accent: #d49484;
+  --sidebar-accent-foreground: #1a1412;
+  --sidebar-border: #3a2f29;
+  --sidebar-ring: #d49484;
+}
+
+/* RTL Support — applied when dir="rtl" on html element */
+[dir="rtl"] {
+  direction: rtl;
+}
+
+[dir="rtl"] .sidebar {
+  border-right: none;
+  border-left: 1px solid var(--sidebar-border);
+}
+
+[dir="rtl"] .chat-message-content {
+  text-align: right;
+}
+
+/* Ensure proper text rendering for all scripts */
+[lang="ur"], [lang="ar"] {
+  font-family: "Noto Nastaliq Urdu", "Noto Sans Arabic", serif;
+  line-height: 2;
+}
+
+[lang="hi"], [lang="mr"], [lang="ne"] {
+  font-family: "Noto Sans Devanagari", "Noto Sans", sans-serif;
+}
+
+[lang="bn"], [lang="as"] {
+  font-family: "Noto Sans Bengali", "Noto Sans", sans-serif;
+}
+
+[lang="ta"] {
+  font-family: "Noto Sans Tamil", "Noto Sans", sans-serif;
+}
+
+[lang="te"] {
+  font-family: "Noto Sans Telugu", "Noto Sans", sans-serif;
+}
+
+[lang="gu"] {
+  font-family: "Noto Sans Gujarati", "Noto Sans", sans-serif;
+}
+
+[lang="kn"] {
+  font-family: "Noto Sans Kannada", "Noto Sans", sans-serif;
+}
+
+[lang="ml"] {
+  font-family: "Noto Sans Malayalam", "Noto Sans", sans-serif;
+}
+
+[lang="pa"] {
+  font-family: "Noto Sans Gurmukhi", "Noto Sans", sans-serif;
+}
+
+[lang="or"] {
+  font-family: "Noto Sans Odia", "Noto Sans", sans-serif;
+}
+
 /* Ensure default styles are fully themed with our new premium warm palette */
 @layer base {
   * {
@@ -134,24 +246,98 @@
   }
 }
 
-/* Custom DayPicker overrides for our new warm palette */
+/* Dark mode overrides — cohesive warm cocoa palette that preserves the
+   PatraRekha identity rather than simply inverting light. */
+.dark {
+  --background: #15100d;
+  --foreground: #efe4d8;
+  --card: #1f1814;
+  --card-foreground: #efe4d8;
+  --popover: #1f1814;
+  --popover-foreground: #efe4d8;
+  --primary: #d49484;
+  --primary-foreground: #1a1412;
+  --secondary: #2c231f;
+  --secondary-foreground: #efe4d8;
+  --muted: #2c231f;
+  --muted-foreground: #b9aa9c;
+  --accent: #d49484;
+  --accent-foreground: #1a1412;
+  --destructive: #d97060;
+  --border: #3a2f29;
+  --input: #2c231f;
+  --ring: #d49484;
+
+  --sidebar: #120c0a;
+  --sidebar-foreground: #efe4d8;
+  --sidebar-primary: #d49484;
+  --sidebar-primary-foreground: #1a1412;
+  --sidebar-accent: #d49484;
+  --sidebar-accent-foreground: #1a1412;
+  --sidebar-border: #3a2f29;
+  --sidebar-ring: #d49484;
+
+  /* Recolor common Tailwind utility shortcuts to match the warm dark palette */
+  --color-slate-950: #1f1814;
+  --color-slate-900: #2c231f;
+  --color-slate-800: #3a2f29;
+  --color-slate-700: #4a3d36;
+  --color-slate-600: #b9aa9c;
+  --color-slate-500: #9b8c7e;
+  --color-slate-400: #b9aa9c;
+  --color-slate-300: #efe4d8;
+  --color-slate-200: #efe4d8;
+  --color-slate-100: #efe4d8;
+
+  --color-blue-950: #2c231f;
+  --color-blue-800: #d49484;
+  --color-blue-700: #d49484;
+  --color-blue-600: #d49484;
+  --color-blue-500: #d49484;
+  --color-blue-400: #d49484;
+  --color-blue-300: #d49484;
+
+  --color-amber-500: #d49484;
+  --color-amber-400: #efe4d8;
+  --color-amber-300: #e0c79c;
+
+  --color-yellow-500: #d49484;
+  --color-yellow-400: #efe4d8;
+  --color-yellow-300: #e0c79c;
+
+  --color-emerald-600: #6fb596;
+  --color-emerald-500: #6fb596;
+  --color-emerald-400: #8dc9ad;
+
+  --color-green-500: #6fb596;
+  --color-green-400: #d49484;
+
+  --color-red-600: #e88274;
+  --color-red-500: #e88274;
+  --color-red-400: #efe4d8;
+
+  --color-rose-400: #d49484;
+}
+
+/* Custom DayPicker overrides — driven by the warm palette via CSS variables
+   so they switch with the active theme. */
 .rdp-dropdown_root {
   position: relative;
   display: inline-flex;
   align-items: center;
-  background-color: #FFEAD5;
-  border: 1px solid #CABDB2;
+  background-color: var(--card);
+  border: 1px solid var(--border);
   border-radius: 0.5rem;
   padding: 0.2rem 0.5rem;
-  color: #413632;
+  color: var(--foreground);
 }
 
 .rdp-dropdown {
   appearance: auto !important;
   opacity: 1 !important;
   position: static !important;
-  background-color: #FFEAD5 !important;
-  color: #413632 !important;
+  background-color: var(--card) !important;
+  color: var(--foreground) !important;
   border: none !important;
   font-size: 0.875rem !important;
   font-weight: 600 !important;
@@ -161,8 +347,8 @@
 }
 
 .rdp-dropdown option {
-  background-color: #FFFBF0 !important;
-  color: #413632 !important;
+  background-color: var(--popover) !important;
+  color: var(--popover-foreground) !important;
   padding: 0.5rem !important;
 }
 
@@ -176,22 +362,43 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  border: 1px solid rgb(202 189 178 / 0.8);
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
   border-radius: 999px;
-  background: #FFFBF0;
-  color: #413632;
+  background: var(--background);
+  color: var(--foreground);
   padding: 0.65rem 1.1rem;
   font-size: 0.875rem;
   font-weight: 600;
   text-decoration: none;
-  box-shadow: 0 4px 12px rgb(65 54 50 / 0.08);
+  box-shadow: 0 4px 12px color-mix(in oklab, var(--foreground) 8%, transparent);
   transition: transform 180ms ease, background-color 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
 
 .pill-nav-item:hover {
   transform: translateY(-2px);
-  border-color: #CA8A78;
-  background: #CA8A78;
-  color: #FFFBF0;
-  box-shadow: 0 8px 18px rgb(202 138 120 / 0.25);
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 8px 18px color-mix(in oklab, var(--primary) 25%, transparent);
+}
+
+
+/* PatraRekha interaction polish */
+html {
+  scroll-behavior: smooth;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--primary) 22%, transparent);
+  color: var(--foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

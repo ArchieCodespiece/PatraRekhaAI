@@ -68,7 +68,12 @@ def process_pdf_metadata(
 
     try:
         text = extract_pdf_text(processing_path, max_chars=MAX_TEXT_CHARS)
-        metadata = extract_metadata_with_llm(text)
+
+        # Detect document language for multilingual summarization
+        from services.language_detection import detect_language
+        lang_result = detect_language(text)
+
+        metadata = extract_metadata_with_llm(text, lang_result=lang_result)
 
         # Imported inside the function so this pipeline can be tested without the
         # backend package on sys.path.
@@ -80,6 +85,13 @@ def process_pdf_metadata(
             file_heading=metadata["file_heading"],
             summarization=metadata["summarization"],
             timeline_json=metadata["timeline_json"],
+            language=lang_result.language,
+            languages=lang_result.languages,
+            script=lang_result.script,
+            scripts=lang_result.scripts,
+            language_confidence=lang_result.confidence,
+            is_romanized=lang_result.romanized,
+            is_code_switched=lang_result.code_switched,
         )
         mark_file_summarized(file_id)
 
@@ -116,7 +128,7 @@ def extract_pdf_text(pdf_path: str | Path, max_chars: int = MAX_TEXT_CHARS) -> s
     return text[:max_chars]
 
 
-def extract_metadata_with_llm(document_text: str) -> dict[str, Any]:
+def extract_metadata_with_llm(document_text: str, lang_result=None) -> dict[str, Any]:
     if not document_text:
         return {
             "file_heading": "Untitled Document",
@@ -131,6 +143,26 @@ def extract_metadata_with_llm(document_text: str) -> dict[str, Any]:
     from groq import Groq
 
     client = Groq(api_key=api_key)
+
+    # Determine language for the response
+    doc_language = "English"
+    if lang_result and lang_result.language != "en":
+        lang_names = {
+            "hi": "Hindi",
+            "bn": "Bengali",
+            "ta": "Tamil",
+            "te": "Telugu",
+            "mr": "Marathi",
+            "gu": "Gujarati",
+            "kn": "Kannada",
+            "ml": "Malayalam",
+            "pa": "Punjabi",
+            "or": "Odia",
+            "as": "Assamese",
+            "ur": "Urdu",
+        }
+        doc_language = lang_names.get(lang_result.language, "English")
+
     request = {
         "model": DEFAULT_MODEL,
         "messages": [
@@ -140,7 +172,12 @@ def extract_metadata_with_llm(document_text: str) -> dict[str, Any]:
                     "Extract document metadata. Return only valid JSON with keys: "
                     "file_heading string, summarization string, timeline_json array. "
                     "timeline_json items must be objects with date and event strings convert date into dd/mm/yyyy format. "
-                    "Use null or an empty array when information is missing."
+                    "Use null or an empty array when information is missing. "
+                    f"The document is in {doc_language}. "
+                    f"Write the file_heading and summarization in {doc_language} "
+                    f"(use the same script as the document). "
+                    f"If the document is in a Romanized form, use that form for the output. "
+                    f"If the document is mixed-language, use the primary language."
                 ),
             },
             {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List
@@ -11,8 +12,11 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Request,
     UploadFile,
 )
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from api.dependencies import (
     get_authenticated_identity,
@@ -52,6 +56,8 @@ from vectorstore.retrieval import (
 
 router = APIRouter()
 
+limiter = Limiter(key_func=get_remote_address)
+
 
 # ============================================================================
 # CONSTANTS
@@ -69,6 +75,10 @@ SEMANTIC_DOCUMENT_SCORE_THRESHOLD = float(
         "SEMANTIC_DOCUMENT_SCORE_THRESHOLD",
         "0.35",
     )
+)
+
+MAX_UPLOAD_BYTES = int(
+    os.getenv("MAX_ATTACHMENT_BYTES", 50 * 1024 * 1024)
 )
 
 FILE_ID_PATTERN = re.compile(
@@ -356,6 +366,27 @@ def ready_documents_with_metadata(
                 "metadata_updated_at": metadata.get(
                     "updated_at"
                 ),
+                "language": metadata.get(
+                    "language"
+                ),
+                "languages": metadata.get(
+                    "languages"
+                ),
+                "script": metadata.get(
+                    "script"
+                ),
+                "scripts": metadata.get(
+                    "scripts"
+                ),
+                "language_confidence": metadata.get(
+                    "language_confidence"
+                ),
+                "is_romanized": metadata.get(
+                    "is_romanized"
+                ),
+                "is_code_switched": metadata.get(
+                    "is_code_switched"
+                ),
             }
         )
 
@@ -458,6 +489,34 @@ def get_documents(
                 "metadata_updated_at": metadata.get(
                     "updated_at"
                 ),
+
+                "language": metadata.get(
+                    "language"
+                ),
+
+                "languages": metadata.get(
+                    "languages"
+                ),
+
+                "script": metadata.get(
+                    "script"
+                ),
+
+                "scripts": metadata.get(
+                    "scripts"
+                ),
+
+                "language_confidence": metadata.get(
+                    "language_confidence"
+                ),
+
+                "is_romanized": metadata.get(
+                    "is_romanized"
+                ),
+
+                "is_code_switched": metadata.get(
+                    "is_code_switched"
+                ),
             }
         )
 
@@ -471,7 +530,9 @@ def get_documents(
 # ============================================================================
 
 @router.post("/upload-document")
+@limiter.limit("10/minute")
 def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     owner_email: str | None = Form(default=None),
     identity=Depends(get_authenticated_identity),
@@ -498,7 +559,25 @@ def upload_document(
             ),
         )
 
+    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"File too large. Maximum size is "
+                f"{MAX_UPLOAD_BYTES // (1024 * 1024)}MB."
+            ),
+        )
+
     content = file.file.read()
+
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"File too large. Maximum size is "
+                f"{MAX_UPLOAD_BYTES // (1024 * 1024)}MB."
+            ),
+        )
 
     if not content:
         raise HTTPException(
@@ -751,22 +830,78 @@ def delete_document(
 
 
 # ============================================================================
+# DOCUMENT RE-PROCESS
+# ============================================================================
+
+@router.post("/documents/{file_id}/reprocess")
+@limiter.limit("5/minute")
+def reprocess_document(
+    request: Request,
+    file_id: str,
+    identity=Depends(get_authenticated_identity),
+):
+    user_id, authenticated_email = identity
+
+    try:
+        document = get_document(
+            file_id,
+            user_id=user_id,
+        )
+    except TypeError:
+        document = get_document(
+            file_id,
+            owner_email=authenticated_email,
+        )
+
+    if not document:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    from webhooks.service.document_queue import document_queue
+
+    try:
+        document_queue.enqueue(
+            {
+                "file_id": file_id,
+                "filename": document.get("filename"),
+                "user_id": user_id,
+                "owner_email": authenticated_email,
+            }
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to enqueue re-processing: {exc}",
+        ) from exc
+
+    return {
+        "ok": True,
+        "file_id": file_id,
+        "message": "Document queued for re-processing.",
+    }
+
+
+# ============================================================================
 # SEMANTIC DOCUMENT SEARCH
 # ============================================================================
 
 @router.post("/semantic-document-search")
+@limiter.limit("30/minute")
 def semantic_document_search(
-    request: DocumentSearchRequest,
+    request: Request,
+    body: DocumentSearchRequest,
     identity=Depends(get_authenticated_identity),
 ):
     user_id, authenticated_email = identity
 
     effective_email = verify_requested_email(
-        request.owner_email,
+        body.owner_email,
         authenticated_email,
     )
 
-    query = request.query.strip()
+    query = body.query.strip()
 
     if not query:
         raise HTTPException(

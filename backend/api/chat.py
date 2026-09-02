@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Dict, List
 
@@ -7,7 +8,11 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Request,
 )
+from fastapi.responses import StreamingResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from api.dependencies import (
     get_authenticated_identity,
@@ -33,6 +38,9 @@ from api.conversation_helpers import (
     update_conversation,
 )
 
+from services.language_detection import detect_language
+from services.romanized_normalizer import get_retrieval_query
+
 from embedding.embedder import GeminiEmbedder
 
 from vectorstore.retrieval import (
@@ -41,6 +49,8 @@ from vectorstore.retrieval import (
 
 
 router = APIRouter()
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 FULL_UUID_PATTERN = re.compile(
@@ -197,22 +207,24 @@ def load_llm_module() -> Any:
 # ============================================================================
 
 @router.post("/chat")
+@limiter.limit("20/minute")
 def chat(
-    request: ChatRequest,
+    request: Request,
+    body: ChatRequest,
     identity=Depends(get_authenticated_identity),
 ):
     user_id, authenticated_email = identity
 
     effective_email = verify_requested_email(
-        request.owner_email,
+        body.owner_email,
         authenticated_email,
     )
 
-    query = request.query.strip()
+    query = body.query.strip()
 
     selected_documents = [
         name.strip()
-        for name in request.selected_documents
+        for name in body.selected_documents
         if name and name.strip()
     ]
 
@@ -243,7 +255,7 @@ def chat(
             ),
         )
 
-    conversation_id = request.conversation_id
+    conversation_id = body.conversation_id
 
     if conversation_id:
         conversation = get_conversation(
@@ -276,10 +288,16 @@ def chat(
         sources=[],
     )
 
+    # Detect language and characteristics for the response
+    lang_result = detect_language(query)
+
+    # Normalize Romanized Indic queries for better semantic retrieval
+    retrieval_query = get_retrieval_query(query)
+
     embedder = GeminiEmbedder()
 
     query_embedding = embedder.embed_text(
-        query
+        retrieval_query
     )
 
     pinecone_document_names = (
@@ -372,3 +390,205 @@ def chat(
         "sources": sources,
         "citations": citations,
     }
+
+
+# ============================================================================
+# STREAMING CHAT
+# ============================================================================
+
+@router.post("/chat/stream")
+@limiter.limit("20/minute")
+def chat_stream(
+    request: Request,
+    body: ChatRequest,
+    identity=Depends(get_authenticated_identity),
+):
+    user_id, authenticated_email = identity
+
+    effective_email = verify_requested_email(
+        body.owner_email,
+        authenticated_email,
+    )
+
+    query = body.query.strip()
+
+    selected_documents = [
+        name.strip()
+        for name in body.selected_documents
+        if name and name.strip()
+    ]
+
+    if not query:
+        raise HTTPException(
+            status_code=400,
+            detail="Query cannot be empty.",
+        )
+
+    if not selected_documents:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "selected_documents must contain "
+                "at least one document name."
+            ),
+        )
+
+    if (
+        len(selected_documents)
+        > MAX_SELECTED_DOCUMENTS
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "selected_documents cannot contain "
+                f"more than {MAX_SELECTED_DOCUMENTS} documents."
+            ),
+        )
+
+    conversation_id = body.conversation_id
+
+    if conversation_id:
+        conversation = get_conversation(
+            conversation_id,
+            user_id,
+        )
+
+        if not conversation:
+            raise HTTPException(
+                status_code=404,
+                detail="Conversation not found.",
+            )
+
+    else:
+        conversation = create_conversation(
+            user_id=user_id,
+            title=query[:80],
+        )
+
+        conversation_id = str(
+            conversation["id"]
+        )
+
+    save_message(
+        conversation_id=conversation_id,
+        user_id=user_id,
+        role="user",
+        content=query,
+        selected_documents=selected_documents,
+        sources=[],
+    )
+
+    # Detect language and characteristics for the response
+    lang_result = detect_language(query)
+
+    # Normalize Romanized Indic queries for better semantic retrieval
+    retrieval_query = get_retrieval_query(query)
+
+    embedder = GeminiEmbedder()
+
+    query_embedding = embedder.embed_text(
+        retrieval_query
+    )
+
+    pinecone_document_names = (
+        resolve_pinecone_document_names(
+            selected_documents,
+            owner_email=effective_email,
+        )
+    )
+
+    retrieval_result = get_chunks_from_documents(
+        document_names=pinecone_document_names,
+        query_embedding=query_embedding,
+        top_k=TOP_K_PER_DOCUMENT,
+        namespace=user_id,
+    )
+
+    if isinstance(
+        retrieval_result,
+        dict,
+    ):
+        matches = retrieval_result.get(
+            "matches",
+            [],
+        )
+    else:
+        matches = getattr(
+            retrieval_result,
+            "matches",
+            [],
+        )
+
+    context_text = build_context_from_matches(
+        matches
+    )
+
+    citations = _build_citations(matches)
+
+    sources = [
+        citation["document_name"]
+        for citation in citations
+    ]
+
+    llm_module = load_llm_module()
+
+    def event_generator():
+        full_answer = ""
+
+        try:
+            for token in llm_module.generate_response_stream(
+                question=query,
+                context=context_text,
+            ):
+                full_answer += token
+                yield f"data: {json.dumps({'token': token})}\n\n"
+
+        except Exception as exc:
+            error_msg = (
+                "I couldn't reach the external LLM service right now, "
+                "so I'm falling back to the retrieved document context."
+            )
+            full_answer = error_msg
+            yield f"data: {json.dumps({'token': error_msg})}\n\n"
+
+        save_message(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            role="assistant",
+            content=full_answer,
+            selected_documents=selected_documents,
+            sources=sources,
+        )
+
+        if conversation.get("title") in (
+            None,
+            "",
+            "New Chat",
+        ):
+            update_conversation(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                title=query[:80],
+            )
+        else:
+            update_conversation(
+                conversation_id=conversation_id,
+                user_id=user_id,
+            )
+
+        final_payload = {
+            "conversation_id": conversation_id,
+            "sources": sources,
+            "citations": citations,
+        }
+        yield f"data: {json.dumps({'done': True, **final_payload})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

@@ -20,3 +20,6 @@ openpyxl
 google-genai>=1.28.0
 pinecone>=7.3.0
 python-dotenv>=1.0.1
+
+# --- Backend Dependencies ---
+slowapi>=0.1.9

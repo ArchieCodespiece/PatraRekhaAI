@@ -127,8 +127,8 @@ def event_priority(
 # CALENDAR
 # ============================================================================
 
-@router.get("/calender-events")
-def get_calender_events(
+@router.get("/calendar-events")
+def get_calendar_events(
     owner_email: str | None = None,
     identity=Depends(get_authenticated_identity),
 ):

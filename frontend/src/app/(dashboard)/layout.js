@@ -3,6 +3,8 @@
 
 import { useEffect } from "react";
 import Sidebar from "../../components/sidebar";
+import AuthGuard from "../../components/AuthGuard";
+import ErrorBoundary from "../../components/ErrorBoundary";
 import {
     getCurrentSession,
     startGmailActivityHeartbeat,
@@ -35,29 +37,20 @@ export default function DashboardLayout({ children }) {
 
         return () => {
             mounted = false;
-
-            /*
-             * IMPORTANT:
-             *
-             * Do NOT stop the Gmail heartbeat here.
-             *
-             * Dashboard navigation can cause components/layouts
-             * to mount and unmount. The Gmail heartbeat must remain
-             * alive for the authenticated browser session.
-             *
-             * signOut() in supabaseAuth.js is responsible for
-             * stopping the heartbeat.
-             */
         };
     }, []);
 
     return (
-        <div className="flex min-h-screen">
-            <Sidebar />
+        <AuthGuard>
+            <ErrorBoundary>
+                <div className="flex min-h-screen">
+                    <Sidebar />
 
-            <main className="flex-1 overflow-auto">
-                {children}
-            </main>
-        </div>
+                    <main className="flex-1 overflow-auto pt-14 lg:pt-0">
+                        {children}
+                    </main>
+                </div>
+            </ErrorBoundary>
+        </AuthGuard>
     );
 }

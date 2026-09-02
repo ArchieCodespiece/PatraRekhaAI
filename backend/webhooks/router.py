@@ -1,5 +1,6 @@
 """Supabase webhook endpoints."""
 
+import hmac
 import os
 from uuid import UUID
 
@@ -15,12 +16,15 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 def _secret_is_valid(authorization, webhook_secret):
     expected = os.getenv("WEBHOOK_SECRET")
     if not expected:
+        return False
+
+    if webhook_secret and hmac.compare_digest(webhook_secret, expected):
         return True
 
-    if webhook_secret == expected:
+    if authorization and hmac.compare_digest(authorization, f"Bearer {expected}"):
         return True
 
-    return authorization == f"Bearer {expected}"
+    return False
 
 
 @router.post("/supabase/files", status_code=status.HTTP_202_ACCEPTED)

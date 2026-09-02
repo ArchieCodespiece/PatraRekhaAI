@@ -44,7 +44,7 @@ NORMALIZE_EMBEDDINGS = True
 # =============================================================================
 
 # Cache generated embeddings locally to avoid repeated API calls
-ENABLE_CACHE = False
+ENABLE_CACHE = os.getenv("EMBEDDING_CACHE_ENABLED", "true").lower() in ("true", "1", "yes")
 
 CACHE_DIR = "cache"
 

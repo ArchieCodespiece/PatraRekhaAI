@@ -2,82 +2,112 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useState, useEffect, useRef } from "react";
 import {
-    Sparkles,
-    FileText,
+    motion,
+    useInView,
+    AnimatePresence,
+} from "motion/react";
+import {
     MessageSquareText,
     CalendarDays,
-    Shield,
-    Zap,
-    Globe,
-    ArrowRight,
-    Search,
     Brain,
-    Lock,
-    BarChart3,
-    Users,
-    Star,
+    Search,
+    Globe,
+    ShieldCheck,
+    ArrowRight,
+    Layers,
+    ChevronDown,
+    Menu,
+    X,
 } from "lucide-react";
+
 import {
-    BlurText,
-    SplitText,
-    GradientText,
     AnimatedCounter,
-    FadeInOnScroll,
     SpotlightCard,
+    GradientText,
 } from "../components/reactbits";
 import ScrollVelocity from "../components/ScrollVelocity";
-import PillNav from "../components/PillNav";
+import {
+    fadeUp,
+    fadeIn,
+    staggerContainer,
+    slideInLeft,
+    slideInRight,
+    navbarVariant,
+} from "../components/motionVariants";
+import PatraRekhaDemo from "../components/ui/patrarekha-demo";
+
+/* ─── Data ─────────────────────────────────────────────────────────────── */
 
 const features = [
     {
         icon: MessageSquareText,
-        title: "Chat with PDF",
-        desc: "Select documents and have intelligent AI conversations. Ask questions, summarize findings, and extract key insights.",
+        title: "Multi-Document Conversations",
+        desc: "Ask questions across multiple institutional documents simultaneously. Get synthesised answers with source attribution.",
         tag: "AI-Powered",
     },
     {
-        icon: Search,
-        title: "Smart Document Search",
-        desc: "Find exactly what you need across thousands of pages with semantic search that understands context, not just keywords.",
-        tag: "Intelligent",
-    },
-    {
-        icon: CalendarDays,
-        title: "Priority Calendar",
-        desc: "Color-coded priority scheduling with high, medium, and normal urgency levels. Never miss a critical deadline.",
-        tag: "Organized",
-    },
-    {
         icon: Brain,
-        title: "AI Summarization",
-        desc: "Instantly generate concise summaries from lengthy documents. Save hours of reading with smart AI extraction.",
+        title: "Intelligent Summarisation",
+        desc: "Extract the essential information instead of forcing users to read everything. Both extractive and abstractive modes.",
         tag: "Efficient",
     },
     {
-        icon: BarChart3,
-        title: "Document Analytics",
-        desc: "Track document usage, access patterns, and extract trends across your entire document library.",
-        tag: "Insightful",
+        icon: CalendarDays,
+        title: "Deadline & Date Intelligence",
+        desc: "Automatically identify important dates and deadlines from documents. Never miss a critical compliance window.",
+        tag: "Organised",
     },
     {
-        icon: Lock,
-        title: "Enterprise Security",
-        desc: "Bank-grade encryption, role-based access control, and complete audit trails for regulatory compliance.",
+        icon: Search,
+        title: "Semantic Search",
+        desc: "Find relevant information based on meaning, not just keywords. Powered by vector embeddings across your document library.",
+        tag: "Intelligent",
+    },
+    {
+        icon: Globe,
+        title: "Multilingual Knowledge",
+        desc: "Support institutional documents across languages. PatraRekha processes and understands content regardless of language.",
+        tag: "Global",
+    },
+    {
+        icon: ShieldCheck,
+        title: "Secure Document Processing",
+        desc: "Documents are processed in isolated pipelines. Your institutional knowledge remains within your organisation.",
         tag: "Secure",
     },
 ];
 
 const stats = [
     { value: 10000, suffix: "+", label: "Documents Processed" },
-    { value: 99, suffix: ".9%", label: "Uptime Guarantee" },
+    { value: 99, suffix: ".9%", label: "Pipeline Uptime" },
     { value: 50, suffix: "x", label: "Faster Insights" },
-    { value: 256, suffix: "-bit", label: "Encryption" },
+    { value: 6, suffix: "", label: "AI Capabilities" },
+];
+
+const workflowSteps = [
+    { step: "01", title: "Upload Documents", desc: "Drag-and-drop PDFs, circulars, notices, and reports into PatraRekha. We handle all common document formats with instant processing." },
+    { step: "02", title: "Extract & Clean", desc: "Our pipeline extracts text, handles OCR for scanned documents, and cleans the content ready for AI processing." },
+    { step: "03", title: "Understand & Analyse", desc: "Named entity recognition, date extraction, and semantic analysis surface the structure hidden inside your documents." },
+    { step: "04", title: "Summarise & Index", desc: "Key information is summarised and embedded into a vector index — making every detail instantly searchable." },
+    { step: "05", title: "Ask Questions", desc: "Select documents and start a conversation. PatraRekha retrieves the most relevant passages and generates precise answers." },
+    { step: "06", title: "Take Action", desc: "Schedule tasks, track deadlines, and share insights. Turn institutional knowledge into organisational action." },
+];
+
+const knowledgeSources = [
+    "Notices", "Circulars", "Policy Documents", "Annual Reports",
+    "Internal Memos", "Compliance Filings", "Contract PDFs", "Meeting Minutes",
+];
+
+const logoNames = [
+    "Enterprise AI", "GovTech", "MetroRail", "LegalTech",
+    "SmartCity", "DataBridge", "CloudFirst", "SecureDoc",
 ];
 
 const testimonials = [
     {
-        quote: "PatraRekhaAI transformed how we handle document workflows. What took hours now takes minutes.",
+        quote: "PatraRekha transformed how we handle document workflows. What took hours now takes minutes.",
         author: "Priya Menon",
         role: "Operations Head",
         org: "Metro Rail Corp",
@@ -89,376 +119,563 @@ const testimonials = [
         org: "GovernanceAI Labs",
     },
     {
-        quote: "Priority calendar with color coding saved us from missing critical compliance deadlines.",
+        quote: "Priority calendar with colour coding saved us from missing critical compliance deadlines.",
         author: "Ananya Sharma",
         role: "Project Manager",
         org: "DigitalBridge Solutions",
     },
 ];
 
-const logoNames = [
-    "Enterprise AI", "GovTech", "MetroRail", "DocuSign", "LegalTech",
-    "SmartCity", "DataBridge", "CloudFirst", "SecureDoc", "InfoNexus",
-];
+/* ─── Scroll-reveal wrapper ─────────────────────────────────────────────── */
+
+function Reveal({ children, className = "", delay = 0, direction = "up" }) {
+    const ref = useRef(null);
+    const inView = useInView(ref, { once: true, margin: "-60px" });
+
+    const variants = {
+        up: fadeUp,
+        left: slideInLeft,
+        right: slideInRight,
+        plain: fadeIn,
+    }[direction] ?? fadeUp;
+
+    return (
+        <motion.div
+            ref={ref}
+            variants={variants}
+            initial="hidden"
+            animate={inView ? "visible" : "hidden"}
+            transition={{ delay: delay / 1000 }}
+            className={className}
+        >
+            {children}
+        </motion.div>
+    );
+}
+
+/* ─── Navbar ────────────────────────────────────────────────────────────── */
+
+function Navbar() {
+    const [scrolled, setScrolled] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
+
+    useEffect(() => {
+        const handler = () => setScrolled(window.scrollY > 20);
+        window.addEventListener("scroll", handler, { passive: true });
+        return () => window.removeEventListener("scroll", handler);
+    }, []);
+
+    const navLinks = [
+        { label: "Features", href: "#features" },
+        { label: "How It Works", href: "#how-it-works" },
+        { label: "Why PatraRekha", href: "#institutional" },
+    ];
+
+    return (
+        <motion.header
+            variants={navbarVariant}
+            initial="hidden"
+            animate="visible"
+            className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+                scrolled
+                    ? "bg-[#FFFBF0]/90 backdrop-blur-md border-b border-[#CABDB2]/30 shadow-sm shadow-[#413632]/5"
+                    : "bg-transparent"
+            }`}
+        >
+            <div className="max-w-7xl mx-auto px-6 md:px-8 h-16 flex items-center justify-between gap-6">
+                {/* Logo */}
+                <Link
+                    href="/"
+                    className="flex items-center gap-2.5 shrink-0 group"
+                    aria-label="PatraRekha AI home"
+                >
+                    <div className="w-8 h-8 rounded-lg bg-[#CA8A78] flex items-center justify-center shadow-sm transition-transform duration-200 group-hover:scale-105">
+                        <Image
+                            src="/patrerekhaai-logo.png"
+                            alt=""
+                            width={18}
+                            height={18}
+                            className="h-[18px] w-[18px] object-contain"
+                        />
+                    </div>
+                    <span className="font-bold text-[15px] tracking-tight text-[#413632]">
+                        Patra<span className="text-[#CA8A78]">Rekha</span>
+                        <span className="text-[#413632]/50 font-semibold text-xs ml-0.5">AI</span>
+                    </span>
+                </Link>
+
+                {/* Desktop Nav Links */}
+                <nav className="hidden md:flex items-center gap-1" aria-label="Main navigation">
+                    {navLinks.map((link) => (
+                        <a
+                            key={link.label}
+                            href={link.href}
+                            className="px-4 py-2 rounded-lg text-sm font-medium text-[#413632]/65 hover:text-[#413632] hover:bg-[#413632]/5 transition-all duration-150"
+                        >
+                            {link.label}
+                        </a>
+                    ))}
+                </nav>
+
+                {/* Desktop CTA */}
+                <div className="hidden md:flex items-center gap-2 shrink-0">
+                    <Link
+                        href="/auth"
+                        className="px-4 py-2 rounded-lg text-sm font-semibold text-[#413632] hover:bg-[#413632]/6 transition-all duration-150"
+                    >
+                        Sign in
+                    </Link>
+                    <Link
+                        href="/auth"
+                        className="group flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#413632] text-[#FFFBF0] text-sm font-semibold transition-all duration-200 hover:bg-[#413632]/85 hover:shadow-md hover:shadow-[#413632]/20 active:scale-95"
+                    >
+                        Get Started
+                        <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+                    </Link>
+                </div>
+
+                {/* Mobile menu toggle */}
+                <button
+                    className="md:hidden p-2 rounded-lg text-[#413632] hover:bg-[#413632]/6 transition-colors"
+                    onClick={() => setMenuOpen((o) => !o)}
+                    aria-label={menuOpen ? "Close menu" : "Open menu"}
+                >
+                    {menuOpen ? <X size={20} /> : <Menu size={20} />}
+                </button>
+            </div>
+
+            {/* Mobile menu */}
+            <AnimatePresence>
+                {menuOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.22, ease: "easeOut" }}
+                        className="md:hidden overflow-hidden bg-[#FFFBF0]/95 backdrop-blur-md border-b border-[#CABDB2]/30"
+                    >
+                        <div className="px-6 py-4 flex flex-col gap-1">
+                            {navLinks.map((link) => (
+                                <a
+                                    key={link.label}
+                                    href={link.href}
+                                    onClick={() => setMenuOpen(false)}
+                                    className="px-3 py-2.5 rounded-lg text-sm font-medium text-[#413632]/70 hover:text-[#413632] hover:bg-[#413632]/5 transition-all"
+                                >
+                                    {link.label}
+                                </a>
+                            ))}
+                            <div className="mt-3 pt-3 border-t border-[#CABDB2]/30 flex flex-col gap-2">
+                                <Link href="/auth" onClick={() => setMenuOpen(false)} className="px-3 py-2.5 rounded-lg text-sm font-semibold text-[#413632] hover:bg-[#413632]/5 transition-all">
+                                    Sign in
+                                </Link>
+                                <Link href="/auth" onClick={() => setMenuOpen(false)} className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-[#413632] text-[#FFFBF0] text-sm font-semibold">
+                                    Get Started <ArrowRight size={14} />
+                                </Link>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </motion.header>
+    );
+}
+
+/* ─── Workflow Step ─────────────────────────────────────────────────────── */
+
+function WorkflowStep({ step, index }) {
+    const ref = useRef(null);
+    const inView = useInView(ref, { once: true, margin: "-40px" });
+    const isLast = index === workflowSteps.length - 1;
+
+    return (
+        <div ref={ref} className="relative flex gap-5 md:gap-6">
+            {/* Step number + connector line */}
+            <div className="flex flex-col items-center shrink-0">
+                <motion.div
+                    variants={scaleInVariant}
+                    initial="hidden"
+                    animate={inView ? "visible" : "hidden"}
+                    transition={{ delay: index * 0.1 }}
+                    className="w-10 h-10 rounded-full border-2 border-[#CA8A78]/40 bg-[#FFFBF0] flex items-center justify-center z-10 shadow-sm"
+                >
+                    <span className="text-xs font-black text-[#CA8A78]">{step.step}</span>
+                </motion.div>
+                {!isLast && (
+                    <div className="w-px flex-1 mt-2 bg-gradient-to-b from-[#CABDB2]/50 to-transparent min-h-[2.5rem]" />
+                )}
+            </div>
+            {/* Content */}
+            <motion.div
+                variants={fadeUp}
+                initial="hidden"
+                animate={inView ? "visible" : "hidden"}
+                transition={{ delay: index * 0.1 + 0.05 }}
+                className="pb-8"
+            >
+                <h3 className="text-base font-bold text-[#413632] mb-1">{step.title}</h3>
+                <p className="text-sm text-[#413632]/60 leading-relaxed max-w-lg">{step.desc}</p>
+            </motion.div>
+        </div>
+    );
+}
+
+const scaleInVariant = {
+    hidden: { opacity: 0, scale: 0.7 },
+    visible: { opacity: 1, scale: 1, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
+};
+
+/* ─── Landing Page ──────────────────────────────────────────────────────── */
 
 export default function LandingPage() {
     return (
-        <div id="top" className="min-h-screen bg-[#FFFBF0] text-[#413632] font-sans overflow-x-hidden">
+        <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
 
-            {/* â•â•â•â•â•â•â•â•â•â•â• NAVBAR â•â•â•â•â•â•â•â•â•â•â• */}
-            <div className="fixed top-4 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-6xl -translate-x-1/2 items-center justify-between gap-4 px-2 sm:px-0">
-                <PillNav
-                    className="shrink-0"
-                    items={[
-                        {
-                            label: "PatraRekhaAI",
-                            href: "#top",
-                            icon: (
-                                <Image
-                                    src="/patrerekhaai-logo.png"
-                                    alt="PatraRekhaAI logo"
-                                    width={32}
-                                    height={32}
-                                    className="h-[32px] w-[32px] object-contain"
-                                />
-                            ),
-                            onClick: (event) => {
-                                event.preventDefault();
-                                window.scrollTo({ top: 0, behavior: "smooth" });
-                            },
-                        },
-                    ]}
-                    itemClassName="px-6 md:px-7 py-3.5 text-base md:text-lg flex items-center gap-3"
-                />
-                <PillNav
-                    className="shrink-0"
-                    items={[
-                        {
-                            label: "Login",
-                            href: "/auth",
-                            icon: <ArrowRight size={16} />,
-                        },
-                    ]}
-                    itemClassName="px-6 md:px-7 py-3.5 text-base md:text-lg"
-                />
-            </div>
+            <Navbar />
 
-            {/* â•â•â•â•â•â•â•â•â•â•â• HERO SECTION â•â•â•â•â•â•â•â•â•â•â• */}
-            <section className="relative pt-40 pb-20 px-6 overflow-hidden">
-                {/* Decorative gradient orbs */}
-                <div className="absolute top-20 left-1/4 w-96 h-96 bg-[#CA8A78]/10 rounded-full blur-3xl pointer-events-none" />
-                <div className="absolute bottom-0 right-1/4 w-80 h-80 bg-[#FFEAD5]/60 rounded-full blur-3xl pointer-events-none" />
+            {/* ═══════════════ HERO ═══════════════ */}
+            <section className="relative pt-40 md:pt-60 pb-20 px-6 md:px-8 overflow-hidden">
+                {/* Subtle background texture */}
+                <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute top-32 left-1/3 w-80 h-80 bg-[#CA8A78]/6 rounded-full blur-3xl" />
+                    <div className="absolute bottom-0 right-1/4 w-64 h-64 bg-[#FFEAD5]/80 rounded-full blur-3xl" />
+                </div>
 
-                <div className="relative max-w-5xl mx-auto text-center">
-                    {/* Headline with blur text animation */}
-                    <FadeInOnScroll delay={100}>
-                        <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight leading-[1.1] mb-6">
-                            Your Documents,{" "}
-                            <br className="hidden sm:block" />
-                            <GradientText
-                                colors={["#CA8A78", "#413632", "#CABDB2", "#CA8A78"]}
-                                animationSpeed={5}
-                                className="text-5xl md:text-7xl font-extrabold"
-                            >
-                                Reimagined with AI
-                            </GradientText>
-                        </h1>
-                    </FadeInOnScroll>
+                <div className="relative max-w-7xl mx-auto">
+                    <div className="grid lg:grid-cols-[1fr_auto] gap-12 lg:gap-16 items-center">
 
-                    <FadeInOnScroll delay={200}>
-                        <BlurText
-                            text="Upload PDFs. Ask questions. Get answers instantly. PatraRekhaAI transforms your static documents into interactive knowledge â€” powering smarter decisions with AI."
-                            delay={30}
-                            className="text-lg md:text-xl text-[#413632]/70 max-w-2xl mx-auto mb-10 leading-relaxed font-sans"
-                        />
-                    </FadeInOnScroll>
+                        {/* Left: Text */}
+                        <div className="max-w-2xl">
+                            {/* Eyebrow */}
+                            {/* H1 */}
+                            <Reveal delay={80}>
+                                <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.08] text-[#413632] mb-5">
+                                    Turn documents into{" "}
+                                    <GradientText
+                                        colors={["#CA8A78", "#8C4F3E", "#CA8A78", "#CABDB2"]}
+                                        animationSpeed={6}
+                                        className="font-extrabold"
+                                    >
+                                        knowledge
+                                    </GradientText>{" "}
+                                    you can actually use.
+                                </h1>
+                            </Reveal>
 
-                    {/* CTA Buttons */}
-                    <FadeInOnScroll delay={300}>
-                        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                            <Link
-                                href="/auth"
-                                className="group flex items-center gap-2.5 px-8 py-4 rounded-2xl bg-[#CA8A78] text-[#FFFBF0] font-bold text-base transition-all duration-300 shadow-xl shadow-[#CA8A78]/25 hover:shadow-2xl hover:shadow-[#CA8A78]/30 hover:scale-[1.02] active:scale-95"
-                            >
-                                <Image
-                                    src="/patrerekhaai-logo.png"
-                                    alt=""
-                                    width={18}
-                                    height={18}
-                                    className="h-[18px] w-[18px] object-contain mix-blend-multiply"
-                                />
-                                Get Started Free
-                                <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
-                            </Link>
-                            <a
-                                href="#features"
-                                className="flex items-center gap-2 px-8 py-4 rounded-2xl border-2 border-[#CABDB2]/60 text-[#413632] font-semibold text-base hover:border-[#CA8A78] hover:bg-[#FFEAD5]/50 transition-all duration-300"
-                            >
-                                Explore Features
-                            </a>
-                        </div>
-                    </FadeInOnScroll>
+                            {/* Subtitle */}
+                            <Reveal delay={160}>
+                                <p className="text-base md:text-lg text-[#413632]/65 leading-relaxed mb-8 max-w-xl">
+                                    PatraRekha AI helps organisations understand, search, summarise
+                                    and interact with their institutional documents — notices, reports,
+                                    circulars, and more.
+                                </p>
+                            </Reveal>
 
-                    {/* Hero visual â€“ abstract card mockup */}
-                    <FadeInOnScroll delay={500}>
-                        <div className="mt-16 relative max-w-4xl mx-auto">
-                            <div className="rounded-3xl border border-[#CA8A78]/65 bg-gradient-to-b from-[#FFEAD5] to-[#FFFBF0] p-1 shadow-2xl shadow-[#CA8A78]/15">
-                                <div className="rounded-[1.25rem] bg-[#FFFBF0] p-6 md:p-8">
-                                    {/* Mock interface */}
-                                    <div className="flex items-center gap-3 mb-6">
-                                        <div className="flex gap-1.5">
-                                            <div className="w-3 h-3 rounded-full bg-[#CA8A78]" />
-                                            <div className="w-3 h-3 rounded-full bg-[#CABDB2]" />
-                                            <div className="w-3 h-3 rounded-full bg-[#CABDB2]/70" />
-                                        </div>
-                                        <div className="flex-1 h-8 rounded-lg bg-[#FFEAD5] border border-[#CA8A78]/60 flex items-center px-3">
-                                            <Search size={13} className="text-[#413632]/75" />
-                                            <span className="ml-2 text-xs text-[#413632]/75">Ask anything about your documents...</span>
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div className="col-span-2 space-y-3">
-                                            <div className="h-4 bg-[#413632]/30 rounded w-4/5" />
-                                            <div className="h-4 bg-[#413632]/22 rounded w-3/5" />
-                                            <div className="h-4 bg-[#413632]/16 rounded w-2/3" />
-                                            <div className="mt-4 p-4 rounded-xl bg-[#FFEAD5] border border-[#CA8A78]/60">
-                                                <div className="flex items-center gap-2 mb-2">
-                                                    <Brain size={14} className="text-[#CA8A78]" />
-                                                    <span className="text-xs font-semibold text-[#CA8A78]">AI Response</span>
-                                                </div>
-                                                <div className="h-3 bg-[#CA8A78]/60 rounded w-full mb-1.5" />
-                                                <div className="h-3 bg-[#CA8A78]/45 rounded w-4/5" />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                            {["Financial Report.pdf", "Tech Spec.pdf", "Proposal.pdf"].map((name) => (
-                                                <div key={name} className="flex items-center gap-2 p-2.5 rounded-lg bg-[#FFEAD5] border border-[#CA8A78]/50">
-                                                    <FileText size={14} className="text-[#CA8A78] shrink-0" />
-                                                    <span className="text-[11px] font-medium text-[#413632]/80 truncate">{name}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
+                            {/* CTAs */}
+                            <Reveal delay={240}>
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                                    <Link
+                                        href="/auth"
+                                        className="group inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#413632] text-[#FFFBF0] font-semibold text-sm transition-all duration-200 hover:bg-[#413632]/85 hover:shadow-lg hover:shadow-[#413632]/20 hover:-translate-y-px active:scale-95"
+                                    >
+                                        Get Started
+                                        <ArrowRight size={15} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+                                    </Link>
+                                    <a
+                                        href="#features"
+                                        className="group inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-[#CABDB2]/60 text-[#413632] font-semibold text-sm hover:border-[#CA8A78]/60 hover:bg-[#FFEAD5]/60 transition-all duration-200"
+                                    >
+                                        Explore PatraRekha
+                                        <ChevronDown size={15} className="text-[#413632]/50 transition-transform duration-200 group-hover:translate-y-px" />
+                                    </a>
                                 </div>
-                            </div>
+                            </Reveal>
+
+                            {/* Subtle social proof */}
+                            <Reveal delay={320}>
+                                <div className="mt-8 flex items-center gap-3">
+                                    <div className="flex -space-x-2">
+                                        {["#CA8A78", "#8C6B5E", "#CABDB2", "#6A4A3E"].map((c, i) => (
+                                            <div
+                                                key={i}
+                                                className="w-7 h-7 rounded-full border-2 border-[#FFFBF0] flex items-center justify-center text-[9px] font-bold text-[#FFFBF0]"
+                                                style={{ backgroundColor: c }}
+                                            >
+                                                {["P", "R", "M", "A"][i]}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <span className="text-xs text-[#413632]/50 font-medium">
+                                        Used by institutional teams across sectors
+                                    </span>
+                                </div>
+                            </Reveal>
                         </div>
-                    </FadeInOnScroll>
+
+                        {/* Right: Pipeline visual */}
+                        <div className="lg:w-80 xl:w-88">
+                            <PatraRekhaDemo />
+                        </div>
+                    </div>
                 </div>
             </section>
 
-            {/* â•â•â•â•â•â•â•â•â•â•â• TRUSTED BY / MARQUEE â•â•â•â•â•â•â•â•â•â•â• */}
-            <section className="py-12 border-y border-[#CABDB2]/20">
-                <p className="text-center text-sm md:text-base font-semibold uppercase tracking-widest text-[#413632] mb-8 md:mb-10">
-                    Trusted by forward-thinking organizations
+            {/* ═══════════════ MARQUEE ═══════════════ */}
+            <section className="py-10 border-y border-[#CABDB2]/20 bg-[#FFEAD5]/20">
+                <p className="text-center text-[10px] font-bold uppercase tracking-[0.2em] text-[#413632]/40 mb-6">
+                    Trusted by forward-thinking organisations
                 </p>
                 <ScrollVelocity
                     texts={[
-                        <span key="organizations" className="inline-flex items-center gap-10">
+                        <span key="orgs" className="inline-flex items-center gap-10">
                             {logoNames.map((name) => (
-                                <span key={name}>{name}</span>
+                                <span key={name} className="inline-flex items-center gap-2">
+                                    <span className="w-1 h-1 rounded-full bg-[#CA8A78]/50" />
+                                    {name}
+                                </span>
                             ))}
                         </span>,
                     ]}
-                    velocity={48}
+                    velocity={40}
                     numCopies={8}
-                    className="pr-10 text-xl md:text-2xl font-bold text-[#413632]/75 whitespace-nowrap"
+                    className="pr-10 text-sm md:text-base font-semibold text-[#413632]/50 whitespace-nowrap tracking-wide"
                 />
             </section>
 
-            {/* â•â•â•â•â•â•â•â•â•â•â• STATS â•â•â•â•â•â•â•â•â•â•â• */}
-            <section className="py-20 px-6">
-                <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-10 md:gap-12">
-                    {stats.map((s, i) => (
-                        <FadeInOnScroll key={s.label} delay={i * 100}>
-                            <div className="text-center">
-                                <div className="text-4xl md:text-6xl font-extrabold tracking-tight text-[#CA8A78]">
-                                    <AnimatedCounter target={s.value} duration={2000} />
-                                    {s.suffix}
+            {/* ═══════════════ STATS ═══════════════ */}
+            <section className="py-16 px-6 md:px-8">
+                <Reveal>
+                    <div className="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+                        {stats.map((s, i) => (
+                            <div key={s.label}>
+                                <div className="text-3xl md:text-4xl font-black tracking-tight text-[#413632]">
+                                    <AnimatedCounter target={s.value} duration={1800} />
+                                    <span className="text-[#CA8A78]">{s.suffix}</span>
                                 </div>
-                                <p className="text-base md:text-lg text-[#413632]/65 mt-2 font-medium">{s.label}</p>
+                                <p className="text-xs text-[#413632]/50 mt-1.5 font-medium uppercase tracking-wider">{s.label}</p>
                             </div>
-                        </FadeInOnScroll>
-                    ))}
-                </div>
+                        ))}
+                    </div>
+                </Reveal>
             </section>
 
-            {/* â•â•â•â•â•â•â•â•â•â•â• FEATURES GRID â•â•â•â•â•â•â•â•â•â•â• */}
-            <section id="features" className="py-20 px-6">
-                <div className="max-w-6xl mx-auto">
-                    <FadeInOnScroll>
-                        <div className="text-center mb-14">
-                            <SplitText
-                                text="Everything you need for intelligent documents"
-                                animateBy="words"
-                                delay={70}
-                                className="text-3xl md:text-5xl font-black tracking-tight text-[#413632] font-heading leading-[1.05]"
-                            />
-                            <BlurText
-                                text="From AI-powered conversations to priority scheduling — PatraRekhaAI brings the future of document management to your fingertips."
-                                delay={18}
-                                className="text-[#413632]/62 mt-4 max-w-2xl mx-auto text-base md:text-lg leading-relaxed font-sans"
-                            />
+            {/* ═══════════════ FEATURES ═══════════════ */}
+            <section id="features" className="py-20 px-6 md:px-8 bg-[#FFEAD5]/20 border-y border-[#CABDB2]/15">
+                <div className="max-w-7xl mx-auto">
+                    <Reveal>
+                        <div className="mb-12 max-w-2xl">
+                            <span className="text-xs font-bold uppercase tracking-widest text-[#CA8A78] mb-3 block">
+                                Capabilities
+                            </span>
+                            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-[#413632] mb-3">
+                                Everything your documents need to become useful.
+                            </h2>
+                            <p className="text-sm md:text-base text-[#413632]/60 leading-relaxed">
+                                PatraRekha combines extraction, understanding, and conversation into one coherent workflow.
+                            </p>
                         </div>
-                    </FadeInOnScroll>
+                    </Reveal>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {features.map((f, i) => {
+                    <motion.div
+                        variants={staggerContainer}
+                        initial="hidden"
+                        whileInView="visible"
+                        viewport={{ once: true, margin: "-40px" }}
+                        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                    >
+                        {features.map((f) => {
                             const Icon = f.icon;
                             return (
-                                <FadeInOnScroll key={f.title} delay={i * 80}>
+                                <motion.div key={f.title} variants={fadeUp}>
                                     <SpotlightCard className="h-full">
                                         <div className="p-6">
-                                            <div className="flex items-center justify-between mb-4">
-                                                <div className="w-11 h-11 rounded-xl bg-[#CA8A78]/15 border border-[#CA8A78]/20 flex items-center justify-center">
-                                                    <Icon size={20} className="text-[#CA8A78]" />
+                                            <div className="flex items-start justify-between mb-4">
+                                                <div className="w-10 h-10 rounded-xl bg-[#CA8A78]/12 border border-[#CA8A78]/18 flex items-center justify-center">
+                                                    <Icon size={18} className="text-[#CA8A78]" />
                                                 </div>
-                                                <span className="text-[10px] font-bold uppercase tracking-wider text-[#CA8A78] px-2.5 py-1 rounded-full bg-[#CA8A78]/10 border border-[#CA8A78]/20">
+                                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#CA8A78] px-2 py-1 rounded-full bg-[#CA8A78]/8 border border-[#CA8A78]/18">
                                                     {f.tag}
                                                 </span>
                                             </div>
-                                            <h3 className="text-base font-bold text-[#413632] mb-2">{f.title}</h3>
-                                            <p className="text-sm text-[#413632]/60 leading-relaxed font-sans">{f.desc}</p>
+                                            <h3 className="text-sm font-bold text-[#413632] mb-2">{f.title}</h3>
+                                            <p className="text-xs text-[#413632]/58 leading-relaxed">{f.desc}</p>
                                         </div>
                                     </SpotlightCard>
-                                </FadeInOnScroll>
+                                </motion.div>
                             );
                         })}
-                    </div>
+                    </motion.div>
                 </div>
             </section>
 
-            {/* â•â•â•â•â•â•â•â•â•â•â• HOW IT WORKS â•â•â•â•â•â•â•â•â•â•â• */}
-            <section id="how-it-works" className="py-20 px-6 bg-gradient-to-b from-[#F3E0D0] via-[#F8ECDD] to-[#F9F1E5]">
-                <div className="max-w-5xl mx-auto">
-                    <FadeInOnScroll>
-                        <div className="text-center mb-14">
-                            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-[#413632]">
-                                Three steps to smarter documents
+            {/* ═══════════════ HOW IT WORKS ═══════════════ */}
+            <section id="how-it-works" className="py-20 px-6 md:px-8">
+                <div className="max-w-4xl mx-auto">
+                    <Reveal>
+                        <div className="mb-12">
+                            <span className="text-xs font-bold uppercase tracking-widest text-[#CA8A78] mb-3 block">
+                                Pipeline
+                            </span>
+                            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-[#413632] mb-3">
+                                How PatraRekha works.
                             </h2>
+                            <p className="text-sm md:text-base text-[#413632]/60 leading-relaxed max-w-xl">
+                                A document pipeline purpose-built for institutional knowledge. From raw upload to actionable insight.
+                            </p>
                         </div>
-                    </FadeInOnScroll>
+                    </Reveal>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                        {[
-                            {
-                                step: "01",
-                                title: "Upload Documents",
-                                desc: "Drag and drop your PDFs into PatraRekhaAI. We support all document formats with instant processing.",
-                                icon: FileText,
-                            },
-                            {
-                                step: "02",
-                                title: "Ask Questions",
-                                desc: "Select documents and chat with AI. Get instant answers, summaries, and cross-document insights.",
-                                icon: MessageSquareText,
-                            },
-                            {
-                                step: "03",
-                                title: "Take Action",
-                                desc: "Schedule tasks, set priorities, and collaborate with your team. Turn insights into results.",
-                                icon: CalendarDays,
-                            },
-                        ].map((item, i) => {
-                            const Icon = item.icon;
-                            return (
-                                <FadeInOnScroll key={item.step} delay={i * 150}>
-                                    <div className="relative text-center p-8 rounded-2xl bg-[#FBF4EA] border border-[#CABDB2]/45 hover:border-[#CA8A78]/45 transition-all duration-300 hover:shadow-lg hover:shadow-[#CA8A78]/8">
-                                        <div className="text-6xl font-extrabold text-[#8C4F3E]/22 absolute top-4 right-6 select-none">
-                                            {item.step}
-                                        </div>
-                                        <div className="w-14 h-14 rounded-2xl bg-[#CA8A78]/10 border border-[#CA8A78]/20 flex items-center justify-center mx-auto mb-5">
-                                            <Icon size={24} className="text-[#CA8A78]" />
-                                        </div>
-                                        <h3 className="text-lg font-bold text-[#413632] mb-2">{item.title}</h3>
-                                        <p className="text-sm text-[#413632]/60 leading-relaxed font-sans">{item.desc}</p>
-                                    </div>
-                                </FadeInOnScroll>
-                            );
-                        })}
-                    </div>
-                </div>
-            </section>
-
-            {/* â•â•â•â•â•â•â•â•â•â•â• TESTIMONIALS â•â•â•â•â•â•â•â•â•â•â• */}
-            <section id="testimonials" className="py-20 px-6">
-                <div className="max-w-5xl mx-auto">
-                    <FadeInOnScroll>
-                        <div className="text-center mb-14">
-                            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-[#413632]">
-                                Loved by teams everywhere
-                            </h2>
-                        </div>
-                    </FadeInOnScroll>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
-                        {testimonials.map((t, i) => (
-                            <FadeInOnScroll key={t.author} delay={i * 120}>
-                                <SpotlightCard className="group h-full">
-                                    <div className="p-6 flex flex-col h-full min-h-[260px] transition-colors duration-300 group-hover:text-[#2E221D]">
-                                        <div className="flex gap-1 mb-4">
-                                            {[1, 2, 3, 4, 5].map((s) => (
-                                                <Star
-                                                    key={s}
-                                                    className="h-4 w-4 fill-[#CA8A78] text-[#CA8A78] transition-all duration-300 group-hover:fill-[#8C4F3E] group-hover:text-[#8C4F3E] group-hover:drop-shadow-[0_0_8px_rgba(202,138,120,0.55)] group-hover:scale-110"
-                                                />
-                                            ))}
-                                        </div>
-                                        <p className="text-sm text-[#413632]/80 leading-relaxed flex-1 italic font-sans">
-                                            &ldquo;{t.quote}&rdquo;
-                                        </p>
-                                        <div className="mt-4 pt-4 border-t border-[#CABDB2]/30">
-                                            <p className="text-sm font-bold text-[#413632]">{t.author}</p>
-                                            <p className="text-xs text-[#413632]/55 font-sans leading-relaxed">{t.role}, {t.org}</p>
-                                        </div>
-                                    </div>
-                                </SpotlightCard>
-                            </FadeInOnScroll>
+                    <div className="space-y-0">
+                        {workflowSteps.map((step, i) => (
+                            <WorkflowStep key={step.step} step={step} index={i} />
                         ))}
                     </div>
                 </div>
             </section>
 
-            {/* â•â•â•â•â•â•â•â•â•â•â• CTA SECTION â•â•â•â•â•â•â•â•â•â•â• */}
-            <section className="py-20 px-6">
-                <FadeInOnScroll>
-                    <div className="max-w-4xl mx-auto rounded-3xl bg-gradient-to-br from-[#413632] to-[#413632]/90 p-12 md:p-16 text-center relative overflow-hidden">
-                        {/* Decorative orb */}
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-[#CA8A78]/20 rounded-full blur-3xl pointer-events-none" />
-                        <div className="absolute bottom-0 left-0 w-48 h-48 bg-[#CA8A78]/10 rounded-full blur-3xl pointer-events-none" />
+            {/* ═══════════════ INSTITUTIONAL KNOWLEDGE ═══════════════ */}
+            <section id="institutional" className="py-20 px-6 md:px-8 bg-[#413632] text-[#FFFBF0] overflow-hidden relative">
+                <div className="absolute top-0 right-0 w-72 h-72 bg-[#CA8A78]/12 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute bottom-0 left-0 w-56 h-56 bg-[#FFEAD5]/5 rounded-full blur-3xl pointer-events-none" />
 
-                        <div className="relative z-10">
-                            <div className="w-14 h-14 rounded-2xl bg-[#CA8A78] flex items-center justify-center mx-auto mb-6 shadow-lg shadow-[#CA8A78]/30">
-                                <Image
-                                    src="/patrerekhaai-logo.png"
-                                    alt=""
-                                    width={24}
-                                    height={24}
-                                    className="h-6 w-6 object-contain mix-blend-multiply"
-                                />
+                <div className="relative max-w-7xl mx-auto">
+                    <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+                        {/* Left: text */}
+                        <Reveal direction="left">
+                            <div>
+                                <span className="text-xs font-bold uppercase tracking-widest text-[#CA8A78] mb-4 block">
+                                    The Problem
+                                </span>
+                                <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight mb-4 leading-tight">
+                                    Institutional knowledge is scattered.
+                                </h2>
+                                <p className="text-[#CABDB2] text-base leading-relaxed mb-6">
+                                    Organisations accumulate knowledge across dozens of document types —
+                                    each stored in silos, rarely searchable, and almost never connected.
+                                </p>
+                                <p className="text-[#CABDB2]/80 text-sm leading-relaxed">
+                                    PatraRekha transforms this fragmented information into a single,
+                                    AI-accessible knowledge layer your team can actually query.
+                                </p>
                             </div>
-                            <h2 className="text-3xl md:text-4xl font-extrabold text-[#FFFBF0] mb-4 tracking-tight">
-                                Ready to transform your documents?
-                            </h2>
-                            <p className="text-[#CABDB2] text-base max-w-lg mx-auto mb-8 font-sans">
-                                Join organizations already using PatraRekhaAI to unlock intelligence from their documents.
-                            </p>
-                            <Link
-                                href="/auth"
-                                className="group inline-flex items-center gap-2.5 px-8 py-4 rounded-2xl bg-[#CA8A78] text-[#FFFBF0] font-bold text-base transition-all duration-300 shadow-xl shadow-[#CA8A78]/30 hover:shadow-2xl hover:shadow-[#CA8A78]/40 hover:scale-[1.02] active:scale-95"
-                            >
-                                Start for Free
-                                <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
-                            </Link>
-                        </div>
+                        </Reveal>
+
+                        {/* Right: source tags */}
+                        <Reveal direction="right">
+                            <div>
+                                <p className="text-[#CABDB2]/60 text-xs font-semibold uppercase tracking-widest mb-5">
+                                    Documents PatraRekha understands
+                                </p>
+                                <div className="flex flex-wrap gap-2.5">
+                                    {knowledgeSources.map((src) => (
+                                        <span
+                                            key={src}
+                                            className="px-3 py-1.5 rounded-full border border-white/12 bg-white/6 text-sm font-medium text-[#CABDB2] hover:border-[#CA8A78]/40 hover:text-[#FFFBF0] transition-all duration-200"
+                                        >
+                                            {src}
+                                        </span>
+                                    ))}
+                                    <span className="px-3 py-1.5 rounded-full border border-[#CA8A78]/30 bg-[#CA8A78]/10 text-sm font-medium text-[#CA8A78]">
+                                        + many more
+                                    </span>
+                                </div>
+
+                                {/* Arrow callout */}
+                                <div className="mt-8 flex items-start gap-3 p-4 rounded-xl border border-white/10 bg-white/4">
+                                    <div className="w-8 h-8 rounded-lg bg-[#CA8A78]/20 flex items-center justify-center shrink-0 mt-0.5">
+                                        <Layers size={14} className="text-[#CA8A78]" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-semibold text-[#FFFBF0] mb-0.5">One knowledge layer</p>
+                                        <p className="text-xs text-[#CABDB2]/70 leading-relaxed">
+                                            All these document types become a unified, queryable knowledge base.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </Reveal>
                     </div>
-                </FadeInOnScroll>
+                </div>
             </section>
 
-            {/* â•â•â•â•â•â•â•â•â•â•â• FOOTER â•â•â•â•â•â•â•â•â•â•â• */}
-            <footer className="border-t border-[#CABDB2]/30 py-12 px-6">
-                <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+            {/* ═══════════════ TESTIMONIALS ═══════════════ */}
+            <section className="py-20 px-6 md:px-8">
+                <div className="max-w-6xl mx-auto">
+                    <Reveal>
+                        <div className="mb-12 text-center">
+                            <span className="text-xs font-bold uppercase tracking-widest text-[#CA8A78] mb-3 block">
+                                Testimonials
+                            </span>
+                            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-[#413632]">
+                                Loved by institutional teams.
+                            </h2>
+                        </div>
+                    </Reveal>
+
+                    <motion.div
+                        variants={staggerContainer}
+                        initial="hidden"
+                        whileInView="visible"
+                        viewport={{ once: true, margin: "-40px" }}
+                        className="grid grid-cols-1 md:grid-cols-3 gap-5"
+                    >
+                        {testimonials.map((t) => (
+                            <motion.div key={t.author} variants={fadeUp}>
+                                <SpotlightCard className="h-full">
+                                    <div className="p-6 flex flex-col h-full min-h-[200px]">
+                                        {/* Quote marks */}
+                                        <span className="text-3xl font-serif text-[#CA8A78]/40 leading-none mb-2">&ldquo;</span>
+                                        <p className="text-sm text-[#413632]/75 leading-relaxed flex-1 italic">
+                                            {t.quote}
+                                        </p>
+                                        <div className="mt-5 pt-4 border-t border-[#CABDB2]/25">
+                                            <p className="text-sm font-bold text-[#413632]">{t.author}</p>
+                                            <p className="text-xs text-[#413632]/50 mt-0.5">{t.role}, {t.org}</p>
+                                        </div>
+                                    </div>
+                                </SpotlightCard>
+                            </motion.div>
+                        ))}
+                    </motion.div>
+                </div>
+            </section>
+
+            {/* ═══════════════ FINAL CTA ═══════════════ */}
+            <section className="py-20 px-6 md:px-8 bg-[#FFEAD5]/30 border-t border-[#CABDB2]/20">
+                <div className="max-w-3xl mx-auto text-center">
+                    <Reveal>
+                        <div className="w-12 h-12 rounded-2xl bg-[#413632] flex items-center justify-center mx-auto mb-6 shadow-md">
+                            <Image
+                                src="/patrerekhaai-logo.png"
+                                alt=""
+                                width={22}
+                                height={22}
+                                className="h-[22px] w-[22px] object-contain"
+                            />
+                        </div>
+                        <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-[#413632] mb-3">
+                            Your documents already contain the answers.
+                        </h2>
+                        <p className="text-base text-[#413632]/60 mb-8 leading-relaxed max-w-xl mx-auto">
+                            Make them accessible. Start using PatraRekha to unlock the institutional knowledge your organisation already holds.
+                        </p>
+                        <Link
+                            href="/auth"
+                            className="group inline-flex items-center gap-2 px-7 py-3.5 rounded-xl bg-[#413632] text-[#FFFBF0] font-semibold text-sm transition-all duration-200 hover:bg-[#413632]/85 hover:shadow-lg hover:shadow-[#413632]/20 hover:-translate-y-px active:scale-95"
+                        >
+                            Start with PatraRekha
+                            <ArrowRight size={15} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+                        </Link>
+                    </Reveal>
+                </div>
+            </section>
+
+            {/* ═══════════════ FOOTER ═══════════════ */}
+            <footer className="border-t border-[#CABDB2]/25 py-10 px-6 md:px-8">
+                <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-5">
+                    {/* Brand */}
                     <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-[#CA8A78] flex items-center justify-center">
+                        <div className="w-7 h-7 rounded-lg bg-[#CA8A78] flex items-center justify-center">
                             <Image
                                 src="/patrerekhaai-logo.png"
                                 alt=""
@@ -467,21 +684,27 @@ export default function LandingPage() {
                                 className="h-[14px] w-[14px] object-contain"
                             />
                         </div>
-                        <span className="font-bold text-sm">
-                            Patra<span className="text-[#CA8A78]">RekhaAI</span>
+                        <span className="font-bold text-sm text-[#413632]">
+                            Patra<span className="text-[#CA8A78]">Rekha</span>
+                            <span className="text-[#413632]/40 text-xs font-medium">AI</span>
                         </span>
                     </div>
-                    <div className="flex items-center gap-6 text-xs text-[#413632]/50 font-medium font-sans">
-                        <a href="#features" className="hover:text-[#CA8A78] transition">Features</a>
-                        <a href="#how-it-works" className="hover:text-[#CA8A78] transition">How It Works</a>
-                        <a href="#testimonials" className="hover:text-[#CA8A78] transition">Testimonials</a>
+
+                    {/* Nav links */}
+                    <div className="flex items-center gap-5 text-xs text-[#413632]/45 font-medium">
+                        <a href="#features" className="hover:text-[#413632] transition-colors">Features</a>
+                        <a href="#how-it-works" className="hover:text-[#413632] transition-colors">How It Works</a>
+                        <a href="#institutional" className="hover:text-[#413632] transition-colors">Why PatraRekha</a>
+                        <Link href="/auth" className="hover:text-[#413632] transition-colors">Sign In</Link>
                     </div>
-                    <p className="text-xs text-[#413632]/40 font-sans">
-                        Â© 2026 PatraRekhaAI. All rights reserved.
+
+                    {/* Copyright */}
+                    <p className="text-xs text-[#413632]/35">
+                        © 2026 PatraRekha AI. All rights reserved.
                     </p>
                 </div>
             </footer>
+
         </div>
     );
 }
-

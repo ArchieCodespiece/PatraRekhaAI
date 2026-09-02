@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 
 import {
     FileText,
@@ -23,6 +23,7 @@ import {
     Trash2,
     ExternalLink,
     BookOpen,
+    Download,
 } from "lucide-react";
 
 import ReactMarkdown from "react-markdown";
@@ -32,6 +33,8 @@ import {
     fetchDocuments,
     authenticatedFetch,
 } from "../lib/supabaseAuth";
+
+import { useI18n } from "../lib/i18n/I18nContext";
 
 
 const MAX_SELECTION = 5;
@@ -46,6 +49,92 @@ function cleanFilename(filename) {
         /^\w{12}-/,
         ""
     );
+}
+
+
+function renderInlineContent(children) {
+    if (!children) return children;
+
+    const processItem = (item) => {
+        if (typeof item === 'string') {
+            const parts = item.split(/<br\s*\/?>/gi);
+            if (parts.length <= 1) return item;
+            
+            return parts.reduce((acc, part, idx) => {
+                if (idx > 0) {
+                    acc.push(<br key={idx} />);
+                }
+                acc.push(part);
+                return acc;
+            }, []);
+        }
+        if (React.isValidElement(item) && item.props && item.props.children) {
+            return React.cloneElement(item, {
+                ...item.props,
+                children: renderInlineContent(item.props.children)
+            });
+        }
+        if (Array.isArray(item)) {
+            return item.map((subItem, index) => (
+                <React.Fragment key={index}>
+                    {processItem(subItem)}
+                </React.Fragment>
+            ));
+        }
+        return item;
+    };
+
+    return processItem(children);
+}
+
+
+function normalizeAIResponse(content) {
+    if (!content) return "";
+
+    let sanitized = content
+        .replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, "")
+        .replace(/<iframe[^>]*>([\s\S]*?)<\/iframe>/gi, "")
+        .replace(/on\w+\s*=\s*"[^"]*"/gi, "")
+        .replace(/on\w+\s*=\s*'[^']*'/gi, "")
+        .replace(/javascript:/gi, "");
+
+    const lines = sanitized.split("\n");
+    const processedLines = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+
+        if (line.trim().startsWith("|")) {
+            while (
+                i + 1 < lines.length &&
+                !lines[i + 1].trim().startsWith("|") &&
+                lines[i + 1].trim() !== "" &&
+                !lines[i + 1].startsWith("#") &&
+                !lines[i + 1].startsWith("-") &&
+                !lines[i + 1].startsWith("*")
+            ) {
+                const nextLine = lines[i + 1].trim();
+                const cleanedNextLine = nextLine.replace(/^\s*[•●▪◦]\s*/g, "• ");
+                line = line.trim() + " <br /> " + cleanedNextLine;
+                i++;
+            }
+
+            if (!line.trim().endsWith("|")) {
+                line = line.trim() + " |";
+            }
+
+            line = line.replace(/([|])\s*[•●▪◦]\s*/g, "$1 • ");
+            line = line.replace(/<br\s*\/?>\s*[•●▪◦]\s*/gi, "<br />• ");
+        } else {
+            line = line.replace(/(?:<br\s*\/?>\s*){2,}/gi, "\n\n");
+            line = line.replace(/<br\s*\/?>\s*([•●▪◦])/gi, "\n- ");
+            line = line.replace(/^\s*[•●▪◦]\s*/g, "- ");
+            line = line.replace(/<br\s*\/?>/gi, "\n");
+        }
+        processedLines.push(line);
+    }
+
+    return processedLines.join("\n");
 }
 
 
@@ -212,6 +301,7 @@ function normalizeMessage(message) {
    ======================================================================== */
 
 export default function ChatWithPDF() {
+    const { t } = useI18n();
 
     /* --------------------------------------------------------------------
        Documents
@@ -401,7 +491,7 @@ export default function ChatWithPDF() {
                         ) {
                             throw new Error(
                                 data?.detail ||
-                                    "Unable to load document."
+                                    "Couldn't load document. Check your connection and try again."
                             );
                         }
 
@@ -500,7 +590,7 @@ export default function ChatWithPDF() {
 
                     setDocumentsError(
                         error?.message ||
-                        "Unable to load documents."
+                        "Couldn't load documents. Check your connection and try again."
                     );
 
                 }
@@ -902,6 +992,38 @@ export default function ChatWithPDF() {
 
 
     /* ====================================================================
+       EXPORT CONVERSATION
+       ==================================================================== */
+
+    const exportConversation = useCallback(() => {
+        if (messages.length === 0) return;
+
+        let markdown = "# Chat Export\n\n";
+
+        for (const msg of messages) {
+            const role = msg.role === "user" ? "**You**" : "**Assistant**";
+            const timestamp = msg.timestamp
+                ? new Date(msg.timestamp).toLocaleString()
+                : "";
+            markdown += `### ${role}${timestamp ? ` (${timestamp})` : ""}\n\n`;
+            markdown += `${msg.content}\n\n`;
+            if (msg.sources?.length > 0) {
+                markdown += `*Sources: ${msg.sources.join(", ")}*\n\n`;
+            }
+            markdown += "---\n\n";
+        }
+
+        const blob = new Blob([markdown], { type: "text/markdown" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `chat-export-${new Date().toISOString().slice(0, 10)}.md`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }, [messages]);
+
+
+    /* ====================================================================
        SEND CHAT
        ==================================================================== */
 
@@ -970,7 +1092,7 @@ export default function ChatWithPDF() {
 
                 const response =
                     await authenticatedFetch(
-                        "/chat",
+                        "/chat/stream",
                         {
                             method: "POST",
 
@@ -991,85 +1113,102 @@ export default function ChatWithPDF() {
                     );
 
 
-                const data =
-                    await response.json();
-
-
                 if (!response.ok) {
-
+                    const errorData = await response.json();
                     throw new Error(
-                        data?.detail ||
+                        errorData?.detail ||
                         "Unable to get a response from the server."
                     );
-
                 }
 
 
-                /* --------------------------------------------------------
-                   Store conversation ID
-                -------------------------------------------------------- */
-
-                if (
-                    data?.conversation_id &&
-                    !currentConversationId
-                ) {
-
-                    setCurrentConversationId(
-                        data.conversation_id
-                    );
-
-                }
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let streamedAnswer = "";
+                let finalPayload = null;
+                let buffer = "";
 
 
-                /* --------------------------------------------------------
-                   AI message
-                -------------------------------------------------------- */
-
-                const aiMessage = {
-
-                    id:
-                        `assistant-${Date.now()}`,
-
-                    role:
-                        "assistant",
-
-                    content:
-                        data?.answer ||
-                        "I couldn't generate a response.",
-
-                    timestamp:
-                        new Date(),
-
-                    sources:
-                        Array.isArray(
-                            data?.sources
-                        )
-                            ? data.sources
-                            : [],
-
-                    citations:
-                        Array.isArray(
-                            data?.citations
-                        )
-                            ? data.citations
-                            : [],
-                };
-
+                const aiMessageId = `assistant-${Date.now()}`;
 
                 setMessages(
                     (previous) => [
-
                         ...previous,
-
-                        aiMessage,
-
+                        {
+                            id: aiMessageId,
+                            role: "assistant",
+                            content: "",
+                            timestamp: new Date(),
+                            sources: [],
+                            citations: [],
+                            streaming: true,
+                        },
                     ]
                 );
 
 
-                /* --------------------------------------------------------
-                   Refresh sidebar
-                -------------------------------------------------------- */
+                while (true) {
+                    const { done, value } = await reader.read();
+
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop() || "";
+
+                    for (const line of lines) {
+                        if (!line.startsWith("data: ")) continue;
+
+                        try {
+                            const payload = JSON.parse(line.slice(6));
+
+                            if (payload.done) {
+                                finalPayload = payload;
+                            } else if (payload.token) {
+                                streamedAnswer += payload.token;
+
+                                setMessages(
+                                    (previous) =>
+                                        previous.map((msg) =>
+                                            msg.id === aiMessageId
+                                                ? { ...msg, content: streamedAnswer }
+                                                : msg
+                                        )
+                                );
+                            }
+                        } catch {
+                            // skip malformed SSE lines
+                        }
+                    }
+                }
+
+
+                setMessages(
+                    (previous) =>
+                        previous.map((msg) =>
+                            msg.id === aiMessageId
+                                ? {
+                                    ...msg,
+                                    content: streamedAnswer || "I couldn't generate a response.",
+                                    streaming: false,
+                                    sources: finalPayload?.sources || [],
+                                    citations: finalPayload?.citations || [],
+                                }
+                                : msg
+                        )
+                );
+
+
+                if (
+                    finalPayload?.conversation_id &&
+                    !currentConversationId
+                ) {
+                    setCurrentConversationId(
+                        finalPayload.conversation_id
+                    );
+                }
+
 
                 await loadConversations();
 
@@ -1148,7 +1287,7 @@ export default function ChatWithPDF() {
 
     return (
 
-        <div className="flex h-full w-full overflow-hidden bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl">
+        <div className="flex h-full w-full overflow-hidden bg-background rounded-2xl border border-border/40 shadow-xl shadow-foreground/8">
 
 
             {/* ============================================================
@@ -1159,8 +1298,8 @@ export default function ChatWithPDF() {
                 className={`
                     shrink-0
                     border-r
-                    border-slate-800
-                    bg-slate-900
+                    border-border/50
+                    bg-card
                     flex
                     flex-col
                     transition-all
@@ -1180,18 +1319,18 @@ export default function ChatWithPDF() {
 
                     {/* Header */}
 
-                    <div className="px-4 py-4 border-b border-slate-800">
+                    <div className="px-4 py-4 border-b border-border/40">
 
                         <div className="flex items-center justify-between">
 
                             <div>
 
-                                <h3 className="text-sm font-bold text-slate-200">
-                                    Recent Chats
+                                <h3 className="text-sm font-bold text-foreground">
+                                    {t("chat.recentChats")}
                                 </h3>
 
-                                <p className="text-[10px] text-slate-500 mt-0.5">
-                                    Your conversation history
+                                <p className="text-[10px] text-foreground/75 mt-0.5">
+                                    {t("chat.conversationHistory")}
                                 </p>
 
                             </div>
@@ -1202,7 +1341,7 @@ export default function ChatWithPDF() {
                                         false
                                     )
                                 }
-                                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300"
+                                className="p-1.5 rounded-lg hover:bg-border/30 text-foreground/75 hover:text-foreground"
                             >
 
                                 <ChevronLeft
@@ -1220,14 +1359,14 @@ export default function ChatWithPDF() {
                             onClick={
                                 handleNewChat
                             }
-                            className="w-full mt-4 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition"
+                            className="w-full mt-4 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-primary hover:bg-primary/85 text-primary-foreground text-xs font-semibold transition shadow-sm shadow-foreground/15"
                         >
 
                             <Plus
                                 size={14}
                             />
 
-                            New Chat
+                            {t("chat.newChat")}
 
                         </button>
 
@@ -1241,14 +1380,14 @@ export default function ChatWithPDF() {
                         {isHistoryLoading &&
                         conversations.length === 0 ? (
 
-                            <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-500">
+                            <div className="flex items-center justify-center gap-2 py-10 text-xs text-foreground/75">
 
                                 <Loader2
                                     size={14}
                                     className="animate-spin"
                                 />
 
-                                Loading chats...
+                                {t("chat.loadingChats")}
 
                             </div>
 
@@ -1258,15 +1397,15 @@ export default function ChatWithPDF() {
 
                                 <MessageSquare
                                     size={22}
-                                    className="text-slate-700 mb-2"
+                                    className="text-muted-foreground mb-2"
                                 />
 
-                                <p className="text-xs text-slate-500">
-                                    No conversations yet
+                                <p className="text-xs text-foreground/75">
+                                    {t("chat.noConversations")}
                                 </p>
 
-                                <p className="text-[10px] text-slate-700 mt-1">
-                                    Start a new chat to see it here.
+                                <p className="text-[10px] text-foreground/70 mt-1">
+                                    {t("chat.startNewChat")}
                                 </p>
 
                             </div>
@@ -1309,8 +1448,8 @@ export default function ChatWithPDF() {
 
                                                     ${
                                                         active
-                                                            ? "bg-blue-600/15 border border-blue-500/30"
-                                                            : "border border-transparent hover:bg-slate-800"
+                                                            ? "bg-primary/12 border border-primary/30"
+                                                            : "border border-transparent hover:bg-border/25"
                                                     }
                                                 `}
                                             >
@@ -1322,8 +1461,8 @@ export default function ChatWithPDF() {
 
                                                         ${
                                                             active
-                                                                ? "text-blue-400"
-                                                                : "text-slate-600"
+                                                                ? "text-primary"
+                                                                : "text-foreground/70"
                                                         }
                                                     `}
                                                 />
@@ -1339,8 +1478,8 @@ export default function ChatWithPDF() {
 
                                                             ${
                                                                 active
-                                                                    ? "text-blue-300"
-                                                                    : "text-slate-300"
+                                                                    ? "text-primary"
+                                                                    : "text-foreground/80"
                                                             }
                                                         `}
                                                     >
@@ -1349,7 +1488,7 @@ export default function ChatWithPDF() {
                                                         }
                                                     </p>
 
-                                                    <p className="text-[9px] text-slate-600 mt-0.5">
+                                                     <p className="text-[9px] text-foreground/70 mt-0.5">
                                                         {formatDate(
                                                             conversation.updated_at
                                                         )}
@@ -1369,7 +1508,7 @@ export default function ChatWithPDF() {
                                                             conversation.id
                                                         )
                                                     }
-                                                    className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition"
+                                                    className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-primary/10 text-foreground/70 hover:text-primary transition"
                                                 >
 
                                                     <Trash2
@@ -1404,7 +1543,7 @@ export default function ChatWithPDF() {
 
                 {/* Header */}
 
-                <div className="flex flex-col gap-2 px-6 py-4 border-b border-slate-800 bg-slate-900/70">
+                <div className="flex flex-col gap-2 px-6 py-4 border-b border-border/40 bg-background/90">
 
                     <div className="flex items-center justify-between gap-3">
 
@@ -1418,7 +1557,7 @@ export default function ChatWithPDF() {
                                             true
                                         )
                                     }
-                                    className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400"
+                                    className="p-2 rounded-lg bg-card/70 hover:bg-border/30 text-foreground/80"
                                 >
 
                                     <ChevronRight
@@ -1430,7 +1569,7 @@ export default function ChatWithPDF() {
                             )}
 
 
-                            <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400 shrink-0">
+                            <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary/12 border border-primary/20 text-primary shrink-0">
 
                                 <MessageSquare
                                     size={18}
@@ -1442,20 +1581,14 @@ export default function ChatWithPDF() {
                             <div className="min-w-0">
 
                                 <h2 className="text-sm font-bold text-foreground">
-                                    Chat with PDF
+                                    {t("chat.title")}
                                 </h2>
 
-                                <p className="text-[11px] text-slate-400">
+                                <p className="text-[11px] text-foreground/80">
 
                                     {canChat
-                                        ? `${selectedCount} document${
-                                            selectedCount >
-                                            1
-                                                ? "s"
-                                                : ""
-                                        } selected`
-
-                                        : "Select documents to start chatting"}
+                                        ? t("chat.selectedCount", "{count} document(s) selected").replace("{count}", selectedCount)
+                                        : t("chat.selectToStart")}
 
                                 </p>
 
@@ -1464,21 +1597,33 @@ export default function ChatWithPDF() {
                         </div>
 
 
-                        <button
-                            onClick={() =>
-                                setIsPanelOpen(
-                                    !isPanelOpen
-                                )
-                            }
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition shrink-0"
-                        >
+                        <div className="flex items-center gap-2">
+                            {messages.length > 0 && (
+                                <button
+                                    onClick={exportConversation}
+                                    title={t("chat.exportChat")}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card/70 hover:bg-border/30 text-foreground/80 text-xs font-medium transition shrink-0"
+                                >
+                                    <Download size={14} />
+                                    <span className="hidden sm:inline">{t("chat.export")}</span>
+                                </button>
+                            )}
+
+                            <button
+                                onClick={() =>
+                                    setIsPanelOpen(
+                                        !isPanelOpen
+                                    )
+                                }
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card/70 hover:bg-border/30 text-foreground/80 text-xs font-medium transition shrink-0"
+                            >
 
                             <FileText
                                 size={14}
                             />
 
                             <span className="hidden sm:inline">
-                                Documents
+                                {t("sidebar.documents")}
                             </span>
 
                             <ChevronDown
@@ -1494,7 +1639,8 @@ export default function ChatWithPDF() {
                                 `}
                             />
 
-                        </button>
+                            </button>
+                        </div>
 
                     </div>
 
@@ -1523,7 +1669,7 @@ export default function ChatWithPDF() {
                                                 key={
                                                     id
                                                 }
-                                                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-blue-950/60 border border-blue-800/40 text-blue-400 text-[10px] font-medium max-w-[140px] truncate"
+                                                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-primary/8 border border-primary/20 text-primary text-[10px] font-medium max-w-[140px] truncate"
                                             >
 
                                                 <FileText
@@ -1546,12 +1692,12 @@ export default function ChatWithPDF() {
 
                             {selectedCount > 4 && (
 
-                                <span className="flex items-center px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 text-[10px] font-medium border border-slate-700">
+                                <span className="flex items-center px-2 py-0.5 rounded-md bg-card/70 text-foreground/80 text-[10px] font-medium border border-border/40">
 
                                     +
                                     {selectedCount - 4}
                                     {" "}
-                                    more
+                                    {t("chat.more")}
 
                                 </span>
 
@@ -1568,17 +1714,17 @@ export default function ChatWithPDF() {
                    MESSAGES
                 ======================================================== */}
 
-                <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5 scrollbar-thin scrollbar-thumb-[#CABDB2] scrollbar-track-transparent">
 
                     {messages.length === 0 ? (
 
                         <div className="flex flex-col items-center justify-center h-full text-center gap-5 py-16">
 
-                            <div className="w-20 h-20 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center">
+                            <div className="w-20 h-20 rounded-2xl bg-primary/8 border border-primary/18 flex items-center justify-center">
 
                                 <MessageSquare
                                     size={36}
-                                    className="text-blue-500/60"
+                                    className="text-primary/50"
                                 />
 
                             </div>
@@ -1586,12 +1732,12 @@ export default function ChatWithPDF() {
 
                             <div>
 
-                                <h3 className="text-base font-semibold text-slate-200">
-                                    Ask anything about your documents
+                                <h3 className="text-base font-semibold text-foreground">
+                                    {t("chat.askDocuments")}
                                 </h3>
 
-                                <p className="text-sm text-slate-500 mt-1.5 max-w-xs">
-                                    Select one or more PDFs from the panel, then type your question below.
+                                <p className="text-sm text-foreground/80 mt-1.5 max-w-xs">
+                                    {t("chat.selectPdfs")}
                                 </p>
 
                             </div>
@@ -1599,13 +1745,13 @@ export default function ChatWithPDF() {
 
                             {!canChat && (
 
-                                <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
+                                <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary/8 border border-primary/18 text-primary text-xs">
 
                                     <AlertCircle
                                         size={14}
                                     />
 
-                                    No documents selected.
+                                    {t("chat.noDocumentsSelected")}
 
                                 </div>
 
@@ -1646,7 +1792,7 @@ export default function ChatWithPDF() {
                                             disabled={
                                                 !canChat
                                             }
-                                            className="px-3 py-2 text-xs text-slate-400 border border-slate-800 rounded-xl hover:border-blue-800/60 hover:text-blue-400 hover:bg-blue-950/20 transition disabled:opacity-40 disabled:cursor-not-allowed text-left"
+                                            className="px-3 py-2 text-xs text-foreground/80 border border-border/40 rounded-xl hover:border-primary/40 hover:text-primary hover:bg-primary/6 transition disabled:opacity-40 disabled:cursor-not-allowed text-left"
                                         >
                                             {
                                                 prompt
@@ -1699,8 +1845,8 @@ export default function ChatWithPDF() {
                                                 ${
                                                     message.role ===
                                                     "user"
-                                                        ? "bg-blue-600 text-white"
-                                                        : "bg-slate-800 border border-slate-700 text-blue-400"
+                                                        ? "bg-primary text-primary-foreground"
+                                                        : "bg-card border border-border/50 text-primary"
                                                 }
                                             `}
                                         >
@@ -1726,6 +1872,7 @@ export default function ChatWithPDF() {
                                         <div
                                             className={`
                                                 max-w-[75%]
+                                                w-full
                                                 flex
                                                 flex-col
                                                 gap-1.5
@@ -1741,127 +1888,166 @@ export default function ChatWithPDF() {
 
                                             <div
                                                 className={`
+                                                    w-full
                                                     px-4
                                                     py-3
                                                     rounded-2xl
                                                     text-sm
                                                     leading-relaxed
+                                                    overflow-hidden
+                                                    break-words
                                                     
                                                     ${
                                                         message.role ===
                                                         "user"
-                                                            ? "bg-blue-600 text-white rounded-tr-sm"
-                                                            : "bg-slate-800 border border-slate-700 text-slate-200 rounded-tl-sm"
+                                                            ? "bg-primary text-primary-foreground rounded-tr-sm shadow-md shadow-foreground/15"
+                                                            : "bg-card/70 border border-border/40 text-foreground rounded-tl-sm backdrop-blur-sm shadow-sm shadow-foreground/5"
                                                     }
                                                 `}
                                             >
-                                                <ReactMarkdown
-                                                    remarkPlugins={[
-                                                        remarkGfm,
-                                                    ]}
-                                                    components={{
-                                                        table: ({
-                                                            children,
-                                                        }) => (
-                                                            <div className="overflow-x-auto my-2 -mx-1">
-                                                                <table className="min-w-full border-collapse text-xs">
-                                                                    {children}
-                                                                </table>
-                                                            </div>
-                                                        ),
-                                                        th: ({
-                                                            children,
-                                                        }) => (
-                                                            <th className="border border-slate-600 px-2 py-1 bg-slate-700 text-slate-200 text-left font-semibold">
-                                                                {children}
-                                                            </th>
-                                                        ),
-                                                        td: ({
-                                                            children,
-                                                        }) => (
-                                                            <td className="border border-slate-600 px-2 py-1 text-slate-300">
-                                                                {children}
-                                                            </td>
-                                                        ),
-                                                        ul: ({
-                                                            children,
-                                                        }) => (
-                                                            <ul className="list-disc list-inside space-y-1 my-2">
-                                                                {children}
-                                                            </ul>
-                                                        ),
-                                                        ol: ({
-                                                            children,
-                                                        }) => (
-                                                            <ol className="list-decimal list-inside space-y-1 my-2">
-                                                                {children}
-                                                            </ol>
-                                                        ),
-                                                        p: ({
-                                                            children,
-                                                        }) => (
-                                                            <p className="mb-2 last:mb-0">
-                                                                {children}
-                                                            </p>
-                                                        ),
-                                                        h1: ({
-                                                            children,
-                                                        }) => (
-                                                            <h1 className="text-lg font-bold mt-4 mb-2 text-slate-100">
-                                                                {children}
-                                                            </h1>
-                                                        ),
-                                                        h2: ({
-                                                            children,
-                                                        }) => (
-                                                            <h2 className="text-base font-bold mt-3 mb-2 text-slate-100">
-                                                                {children}
-                                                            </h2>
-                                                        ),
-                                                        h3: ({
-                                                            children,
-                                                        }) => (
-                                                            <h3 className="text-sm font-semibold mt-2 mb-1 text-slate-200">
-                                                                {children}
-                                                            </h3>
-                                                        ),
-                                                        strong: ({
-                                                            children,
-                                                        }) => (
-                                                            <strong className="font-semibold text-slate-100">
-                                                                {children}
-                                                            </strong>
-                                                        ),
-                                                        a: ({
-                                                            href,
-                                                            children,
-                                                        }) => (
-                                                            <a
-                                                                href={href}
-                                                                className="text-blue-400 underline"
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                            >
-                                                                {children}
-                                                            </a>
-                                                        ),
-                                                        code: ({
-                                                            inline,
-                                                            children,
-                                                        }) =>
-                                                            inline ? (
-                                                                <code className="bg-slate-700 px-1 py-0.5 rounded text-blue-300 text-xs">
-                                                                    {children}
-                                                                </code>
-                                                            ) : (
-                                                                <code className="block bg-slate-900 p-3 rounded-lg text-slate-300 text-xs overflow-x-auto my-2">
-                                                                    {children}
-                                                                </code>
+                                                {message.role === "user" ? (
+                                                    <div className="whitespace-pre-wrap break-words">
+                                                        {message.content}
+                                                    </div>
+                                                ) : (
+                                                    <ReactMarkdown
+                                                        remarkPlugins={[
+                                                            remarkGfm,
+                                                        ]}
+                                                        components={{
+                                                            table: ({
+                                                                children,
+                                                            }) => (
+                                                                <div className="w-full overflow-x-auto my-4 rounded-xl border border-border/50 bg-card/30 scrollbar-thin shadow-sm shadow-foreground/5">
+                                                                    <table className="w-full border-collapse text-left text-xs text-foreground table-auto min-w-full">
+                                                                        {children}
+                                                                    </table>
+                                                                </div>
                                                             ),
-                                                    }}
-                                                >
-                                                    {message.content}
-                                                </ReactMarkdown>
+                                                            thead: ({ children }) => (
+                                                                <thead className="bg-card/80 border-b border-border/60">
+                                                                    {children}
+                                                                </thead>
+                                                            ),
+                                                            tr: ({ children }) => (
+                                                                <tr className="border-b border-border/35 last:border-b-0 hover:bg-card/50 transition-colors">
+                                                                    {children}
+                                                                </tr>
+                                                            ),
+                                                            th: ({
+                                                                children,
+                                                            }) => (
+                                                                <th className="px-4 py-3 font-semibold text-foreground text-xs tracking-wider">
+                                                                    {renderInlineContent(children)}
+                                                                </th>
+                                                            ),
+                                                            td: ({
+                                                                children,
+                                                            }) => (
+                                                                <td className="px-4 py-3 text-foreground align-top whitespace-normal">
+                                                                    {renderInlineContent(children)}
+                                                                </td>
+                                                            ),
+                                                            ul: ({
+                                                                children,
+                                                            }) => (
+                                                                <ul className="list-disc pl-6 space-y-1.5 my-3 text-foreground">
+                                                                    {children}
+                                                                </ul>
+                                                            ),
+                                                            ol: ({
+                                                                children,
+                                                            }) => (
+                                                                <ol className="list-decimal pl-6 space-y-1.5 my-3 text-foreground">
+                                                                    {children}
+                                                                </ol>
+                                                            ),
+                                                            li: ({ children }) => (
+                                                                <li className="leading-relaxed pl-1 marker:text-primary">
+                                                                    {children}
+                                                                </li>
+                                                            ),
+                                                            p: ({
+                                                                children,
+                                                            }) => (
+                                                                <p className="mb-4 last:mb-0 whitespace-pre-wrap leading-relaxed text-foreground">
+                                                                    {renderInlineContent(children)}
+                                                                </p>
+                                                            ),
+                                                             blockquote: ({ children }) => (
+                                                                 <blockquote className="pl-3 py-1.5 italic text-foreground/80 my-3 bg-card/30 rounded-r-lg">
+                                                                    {children}
+                                                                </blockquote>
+                                                            ),
+                                                            em: ({ children }) => (
+                                                                <em className="italic text-foreground/80">
+                                                                    {children}
+                                                                </em>
+                                                            ),
+                                                            h1: ({
+                                                                children,
+                                                            }) => (
+                                                                <h1 className="text-xl font-bold font-heading text-foreground mt-6 mb-3 border-b border-border/30 pb-1">
+                                                                    {children}
+                                                                </h1>
+                                                            ),
+                                                            h2: ({
+                                                                children,
+                                                            }) => (
+                                                                <h2 className="text-lg font-semibold font-heading text-foreground mt-5 mb-2">
+                                                                    {children}
+                                                                </h2>
+                                                            ),
+                                                            h3: ({
+                                                                children,
+                                                            }) => (
+                                                                <h3 className="text-base font-semibold font-heading text-foreground mt-4 mb-2">
+                                                                    {children}
+                                                                </h3>
+                                                            ),
+                                                            h4: ({ children }) => (
+                                                                <h4 className="text-sm font-semibold text-foreground mt-3 mb-1">
+                                                                    {children}
+                                                                </h4>
+                                                            ),
+                                                            strong: ({
+                                                                children,
+                                                            }) => (
+                                                                <strong className="font-semibold text-foreground">
+                                                                    {children}
+                                                                </strong>
+                                                            ),
+                                                            a: ({
+                                                                href,
+                                                                children,
+                                                            }) => (
+                                                                <a
+                                                                    href={href}
+                                                                    className="text-primary underline font-medium hover:text-primary transition-colors break-all"
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                >
+                                                                    {children}
+                                                                </a>
+                                                            ),
+                                                            code: ({
+                                                                inline,
+                                                                children,
+                                                            }) =>
+                                                                inline ? (
+                                                                    <code className="bg-card/60 px-1.5 py-0.5 rounded text-primary text-xs font-mono font-semibold">
+                                                                        {children}
+                                                                    </code>
+                                                                ) : (
+                                                                    <code className="block bg-primary p-4 rounded-xl text-primary-foreground text-xs font-mono overflow-x-auto my-3 border border-[#413632] scrollbar-thin">
+                                                                        {children}
+                                                                    </code>
+                                                                ),
+                                                        }}
+                                                    >
+                                                        {normalizeAIResponse(message.content)}
+                                                    </ReactMarkdown>
+                                                )}
                                             </div>
 
 
@@ -1873,8 +2059,8 @@ export default function ChatWithPDF() {
                                                         .length >
                                                     0)) && (
                                                 <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                                    <span className="text-[10px] text-slate-600 self-center mr-1">
-                                                        Sources:
+                                                     <span className="text-[10px] text-foreground/70 self-center mr-1">
+                                                        {t("chat.sources")}:
                                                     </span>
 
                                                     {message.citations &&
@@ -1914,7 +2100,7 @@ export default function ChatWithPDF() {
                                                                                           citation
                                                                                       )
                                                                               }
-                                                                              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 hover:border-blue-500/50 hover:text-blue-300 transition cursor-pointer text-left"
+                                                                              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-card/70 text-foreground/80 border border-border/40 hover:border-primary/50 hover:text-primary transition cursor-pointer text-left"
                                                                           >
                                                                               <FileText
                                                                                   size={
@@ -1929,26 +2115,26 @@ export default function ChatWithPDF() {
                                                                                )}
                                                                               </span>
 
-                                                                              {pageLabel && (
-                                                                                  <span className="text-slate-500">
-                                                                                      ·
-                                                                                      {pageLabel}
-                                                                                  </span>
-                                                                              )}
+                                                                               {pageLabel && (
+                                                                                   <span className="text-foreground/80">
+                                                                                       ·
+                                                                                       {pageLabel}
+                                                                                   </span>
+                                                                               )}
 
-                                                                              {citation.section && (
-                                                                                  <span className="text-slate-500 truncate max-w-[100px]">
-                                                                                      ·
-                                                                                      {citation.section}
-                                                                                  </span>
-                                                                              )}
+                                                                                 {citation.section && (
+                                                                                     <span className="text-foreground/80 truncate max-w-[100px]">
+                                                                                       ·
+                                                                                       {citation.section}
+                                                                                   </span>
+                                                                               )}
 
-                                                                              <ExternalLink
-                                                                                  size={
-                                                                                      8
-                                                                                  }
-                                                                                  className="shrink-0 text-slate-500"
-                                                                              />
+                                                                               <ExternalLink
+                                                                                   size={
+                                                                                       8
+                                                                                   }
+                                                                                   className="shrink-0 text-foreground/80"
+                                                                               />
                                                                           </button>
                                                                       );
                                                                   }
@@ -1973,7 +2159,7 @@ export default function ChatWithPDF() {
                                                                   (src) => (
                                                                       <span
                                                                           key={`${message.id}-${src}`}
-                                                                          className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700"
+                                                                            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-card/70 text-foreground/80 border border-border/40"
                                                                       >
                                                                           <FileText
                                                                               size={
@@ -1992,7 +2178,7 @@ export default function ChatWithPDF() {
                                             )}
 
 
-                                            <span className="text-[10px] text-slate-600">
+                                            <span className="text-[10px] text-foreground/70">
 
                                                 {formatMessageTime(
                                                     message.timestamp
@@ -2012,7 +2198,7 @@ export default function ChatWithPDF() {
 
                                 <div className="flex gap-3.5">
 
-                                    <div className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 text-blue-400 flex items-center justify-center shrink-0">
+                                    <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
 
                                         <Bot
                                             size={15}
@@ -2021,15 +2207,16 @@ export default function ChatWithPDF() {
                                     </div>
 
 
-                                    <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-slate-800 border border-slate-700 flex items-center gap-2">
+                                    <div className="px-4 py-3 rounded-xl rounded-tl-sm bg-card border border-border/40 flex items-center gap-2.5 backdrop-blur-sm">
 
-                                        <Loader2
-                                            size={14}
-                                            className="text-blue-400 animate-spin"
-                                        />
+                                        <div className="flex gap-1">
+                                            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                                            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse [animation-delay:150ms]" />
+                                            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse [animation-delay:300ms]" />
+                                        </div>
 
-                                        <span className="text-sm text-slate-400">
-                                            Analyzing documents…
+                                        <span className="text-sm text-muted-foreground">
+                                            {t("chat.analyzingDocuments", "Searching documents...")}
                                         </span>
 
                                     </div>
@@ -2056,17 +2243,17 @@ export default function ChatWithPDF() {
                    INPUT
                 ======================================================== */}
 
-                <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/50">
+                <div className="px-6 py-4 border-t border-border/40 bg-background/70">
 
                     {!canChat && (
 
-                        <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/15 text-amber-400/80 text-xs">
+                        <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-primary/6 border border-primary/15 text-primary/80 text-xs">
 
                             <AlertCircle
                                 size={13}
                             />
 
-                            Select at least one PDF document to enable chat.
+                            {t("chat.selectPdfToEnable")}
 
                         </div>
 
@@ -2106,10 +2293,10 @@ export default function ChatWithPDF() {
                                 }
                                 placeholder={
                                     canChat
-                                        ? "Ask a question about your documents…"
-                                        : "Select documents first to start chatting…"
+                                        ? t("chat.askPlaceholderChat")
+                                        : t("chat.selectFirst")
                                 }
-                                className="w-full resize-none bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 pr-10 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition disabled:opacity-50 disabled:cursor-not-allowed max-h-32"
+                                className="w-full resize-none bg-card/70 border border-border/60 rounded-xl px-4 py-3 pr-10 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary transition disabled:opacity-50 disabled:cursor-not-allowed max-h-32 backdrop-blur-sm"
                                 style={{
                                     minHeight:
                                         "48px",
@@ -2118,7 +2305,7 @@ export default function ChatWithPDF() {
 
                             <Paperclip
                                 size={15}
-                                className="absolute right-3 bottom-3.5 text-slate-600"
+                                className="absolute right-3 bottom-3.5 text-foreground/70"
                             />
 
                         </div>
@@ -2131,7 +2318,7 @@ export default function ChatWithPDF() {
                                 !inputValue.trim() ||
                                 isLoading
                             }
-                            className="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition shadow-lg shadow-blue-950/40 active:scale-95 shrink-0"
+                            className="flex items-center justify-center w-12 h-12 rounded-xl bg-primary hover:bg-primary/85 disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground transition shadow-lg shadow-foreground/15 active:scale-95 shrink-0"
                         >
 
                             {isLoading ? (
@@ -2154,9 +2341,9 @@ export default function ChatWithPDF() {
                     </form>
 
 
-                    <p className="text-[10px] text-slate-600 mt-2 text-center">
+                    <p className="text-[10px] text-foreground/70 mt-2 text-center">
 
-                        PatraRekhaAI may produce inaccurate information. Verify important details.
+                        {t("chat.disclaimer")}
 
                     </p>
 
@@ -2173,8 +2360,8 @@ export default function ChatWithPDF() {
                 className={`
                     shrink-0
                     border-l
-                    border-slate-800
-                    bg-slate-900
+                    border-border/50
+                    bg-card
                     flex
                     flex-col
                     transition-all
@@ -2194,20 +2381,19 @@ export default function ChatWithPDF() {
 
                     {/* Header */}
 
-                    <div className="flex items-center justify-between px-4 py-4 border-b border-slate-800">
+                    <div className="flex items-center justify-between px-4 py-4 border-b border-border/40">
 
                         <div>
 
                             <h3 className="text-sm font-bold text-foreground">
-                                Your Documents
+                                {t("chat.yourDocuments")}
                             </h3>
 
-                            <p className="text-[11px] text-slate-500 mt-0.5">
+                            <p className="text-[11px] text-foreground/75 mt-0.5">
 
                                 {selectedCount}
                                 {" / "}
                                 {MAX_SELECTION}
-                                {" selected"}
 
                             </p>
 
@@ -2222,20 +2408,20 @@ export default function ChatWithPDF() {
                                 documents.length ===
                                 0
                             }
-                            className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition disabled:opacity-40"
+                            className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-card/70 hover:bg-border/30 text-foreground/80 transition disabled:opacity-40"
                         >
 
                             {selectedPDFs.size >
                             0
 
-                                ? "Deselect All"
+                                ? t("chat.deselectAll")
 
                                 : documents.length >
                                   MAX_SELECTION
 
-                                ? `Select ${MAX_SELECTION}`
+                                ? t("chat.selectN", "Select {count}").replace("{count}", MAX_SELECTION)
 
-                                : "Select All"}
+                                : t("chat.selectAll")}
 
                         </button>
 
@@ -2244,13 +2430,13 @@ export default function ChatWithPDF() {
 
                     {/* Search */}
 
-                    <div className="px-4 py-3 border-b border-slate-800/60">
+                    <div className="px-4 py-3 border-b border-border/30">
 
                         <div className="relative">
 
                             <Search
                                 size={14}
-                                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                                className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground/75"
                             />
 
                             <input
@@ -2265,8 +2451,8 @@ export default function ChatWithPDF() {
                                         event.target.value
                                     )
                                 }
-                                placeholder="Search documents..."
-                                className="w-full bg-slate-800 border border-slate-700/60 rounded-lg pl-8 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
+                                placeholder={t("docs.searchPlaceholder")}
+                                className="w-full bg-card/80 border border-border/60 rounded-lg pl-8 pr-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/45 focus:outline-none focus:border-primary focus:ring-2 focus:ring-[#CA8A78]/15 transition backdrop-blur-sm shadow-sm shadow-foreground/5"
                             />
 
 
@@ -2278,7 +2464,7 @@ export default function ChatWithPDF() {
                                             ""
                                         )
                                     }
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-foreground/75 hover:text-foreground"
                                 >
 
                                     <X
@@ -2300,14 +2486,14 @@ export default function ChatWithPDF() {
 
                         {isDocumentsLoading ? (
 
-                            <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-500">
+                            <div className="flex items-center justify-center gap-2 py-10 text-xs text-foreground/75">
 
                                 <Loader2
                                     size={14}
-                                    className="animate-spin text-blue-400"
+                                    className="animate-spin text-primary"
                                 />
 
-                                Loading documents...
+                                {t("common.loading")}
 
                             </div>
 
@@ -2317,10 +2503,10 @@ export default function ChatWithPDF() {
 
                                 <AlertCircle
                                     size={20}
-                                    className="text-amber-400"
+                                    className="text-primary"
                                 />
 
-                                <p className="text-xs text-slate-500">
+                                <p className="text-xs text-foreground/75">
                                     {
                                         documentsError
                                     }
@@ -2374,8 +2560,8 @@ export default function ChatWithPDF() {
 
                                                 ${
                                                     isSelected
-                                                        ? "bg-blue-600/10 border-blue-500/40 shadow-sm"
-                                                        : "bg-slate-800/30 border-slate-800/60 hover:border-slate-700 hover:bg-slate-800/60"
+                                                        ? "bg-primary/10 border-primary/50 shadow-sm shadow-primary/10"
+                                                        : "bg-card/70 border-border/50 hover:border-primary/40 hover:bg-card hover:shadow-sm hover:shadow-foreground/5"
                                                 }
 
                                                 ${
@@ -2394,8 +2580,8 @@ export default function ChatWithPDF() {
 
                                                     ${
                                                         isSelected
-                                                            ? "text-blue-400"
-                                                            : "text-slate-600 group-hover:text-slate-400"
+                                                            ? "text-primary"
+                                                             : "text-foreground/70 group-hover:text-foreground/85"
                                                     }
                                                 `}
                                             >
@@ -2433,8 +2619,8 @@ export default function ChatWithPDF() {
 
                                                     ${
                                                         isSelected
-                                                            ? "bg-blue-600/20 border-blue-500/30 text-blue-400"
-                                                            : "bg-slate-800 border-slate-700 text-slate-500"
+                                                            ? "bg-primary/12 border-primary/20 text-primary"
+                                                             : "bg-card/60 border-border/40 text-foreground/80"
                                                     }
                                                 `}
                                             >
@@ -2456,10 +2642,10 @@ export default function ChatWithPDF() {
                                                         truncate
                                                         transition
 
-                                                        ${
+                                                    ${
                                                             isSelected
-                                                                ? "text-blue-300"
-                                                                : "text-slate-300 group-hover:text-slate-200"
+                                                                ? "text-primary"
+                                                                : "text-foreground/80 group-hover:text-foreground"
                                                         }
                                                     `}
                                                 >
@@ -2471,17 +2657,17 @@ export default function ChatWithPDF() {
 
                                                 <div className="flex items-center gap-2 mt-1">
 
-                                                    <span className="text-[10px] text-slate-600">
+                                             <span className="text-[10px] text-foreground/70">
                                                         {
                                                             pdf.size
                                                         }
                                                     </span>
 
-                                                    <span className="text-[10px] text-slate-700">
+                                                    <span className="text-[10px] text-foreground/65">
                                                         ·
                                                     </span>
 
-                                                    <span className="text-[10px] text-slate-600 truncate">
+                                                    <span className="text-[10px] text-foreground/70 truncate">
                                                         {
                                                             pdf.filename
                                                         }
@@ -2490,7 +2676,7 @@ export default function ChatWithPDF() {
                                                 </div>
 
 
-                                                <p className="text-[10px] text-slate-700 mt-0.5">
+                                                <p className="text-[10px] text-foreground/70 mt-0.5">
 
                                                     {
                                                         pdf.uploaded
@@ -2511,11 +2697,11 @@ export default function ChatWithPDF() {
 
                                 <Search
                                     size={20}
-                                    className="text-slate-600 mb-2"
+                                    className="text-foreground/70 mb-2"
                                 />
 
-                                <p className="text-xs text-slate-500">
-                                    No documents found
+                                <p className="text-xs text-foreground/75">
+                                    {t("docs.emptyNoDocuments")}
                                 </p>
 
                             </div>
@@ -2527,17 +2713,17 @@ export default function ChatWithPDF() {
 
                     {/* Footer */}
 
-                    <div className="px-4 py-3 border-t border-slate-800 bg-slate-950/50">
+                    <div className="px-4 py-3 border-t border-border/30 bg-card/40">
 
                         <button
-                            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-slate-700 hover:border-blue-600/50 hover:bg-blue-600/5 text-slate-500 hover:text-blue-400 text-xs font-medium transition"
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-border/50 hover:border-primary/50 hover:bg-primary/6 text-foreground/75 hover:text-primary text-xs font-medium transition"
                         >
 
                             <Upload
                                 size={14}
                             />
 
-                            Upload New PDF
+                            {t("docs.uploadNewPdf")}
 
                         </button>
 
@@ -2588,19 +2774,19 @@ function CitationPreviewModal({
             : previewUrl;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-            <div className="flex h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/60 p-4">
+            <div className="flex h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-border/50 bg-background shadow-2xl shadow-foreground/20">
 
-                <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-800 bg-slate-900 px-5 py-3">
+                <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border/40 bg-card px-5 py-3">
                     <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-200">
+                        <p className="truncate text-sm font-semibold text-foreground">
                             {document?.document_name ||
                                 document?.filename ||
                                 "Document Preview"}
                         </p>
 
                         {previewPage && (
-                            <p className="truncate text-xs text-slate-500">
+                                <p className="truncate text-xs text-foreground/75">
                                 Jumping to page {previewPage}
                                 {previewText && " · Matched text shown below"}
                             </p>
@@ -2610,7 +2796,7 @@ function CitationPreviewModal({
                     <button
                         type="button"
                         onClick={onClose}
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-800 hover:text-slate-200"
+                         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-foreground/75 transition hover:bg-border/30 hover:text-foreground"
                     >
                         <X size={18} />
                     </button>
@@ -2618,26 +2804,26 @@ function CitationPreviewModal({
 
                 <div className="flex min-h-0 flex-1">
                     {previewText && (
-                        <div className="w-80 shrink-0 border-r border-slate-800 bg-slate-900/50 overflow-y-auto p-4">
+                        <div className="w-80 shrink-0 border-r border-border/40 bg-card/40 overflow-y-auto p-4">
                             <div className="flex items-center gap-2 mb-3">
-                                <BookOpen size={14} className="text-blue-400" />
-                                <span className="text-xs font-semibold text-slate-300">
+                                <BookOpen size={14} className="text-primary" />
+                                <span className="text-xs font-semibold text-foreground/80">
                                     Matched Text
                                 </span>
                             </div>
 
-                            <p className="text-xs leading-5 text-slate-400 whitespace-pre-wrap">
+                            <p className="text-xs leading-5 text-foreground/80 whitespace-pre-wrap">
                                 {previewText}
                             </p>
                         </div>
                     )}
 
-                    <div className="flex-1 min-h-0 bg-slate-900">
+                        <div className="flex-1 min-h-0 bg-card/30">
                         {isPreviewLoading ? (
                             <div className="flex h-full items-center justify-center">
                                 <Loader2
                                     size={24}
-                                    className="text-blue-400 animate-spin"
+                                    className="text-primary animate-spin"
                                 />
                             </div>
                         ) : (

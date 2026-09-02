@@ -1,4 +1,77 @@
 import re
+import unicodedata
+
+
+# Indic Unicode ranges that must NOT be stripped or altered
+INDIC_RANGES = [
+    (0x0900, 0x097F),   # Devanagari
+    (0x0980, 0x09FF),   # Bengali
+    (0x0A00, 0x0A7F),   # Gurmukhi
+    (0x0A80, 0x0AFF),   # Gujarati
+    (0x0B00, 0x0B7F),   # Oriya/Odia
+    (0x0B80, 0x0BFF),   # Tamil
+    (0x0C00, 0x0C7F),   # Telugu
+    (0x0C80, 0x0CFF),   # Kannada
+    (0x0D00, 0x0D7F),   # Malayalam
+    (0x0D80, 0x0DFF),   # Sinhala
+    (0x0E00, 0x0E7F),   # Thai
+    (0xA8E0, 0xA8FF),   # Devanagari Extended
+    (0x11B00, 0x11B5F), # Devanagari Extended-A
+]
+
+# Arabic ranges (for Urdu)
+ARABIC_RANGES = [
+    (0x0600, 0x06FF),   # Arabic
+    (0x0750, 0x077F),   # Arabic Supplement
+    (0xFB50, 0xFDFF),   # Arabic Presentation Forms-A
+    (0xFE70, 0xFEFF),   # Arabic Presentation Forms-B
+]
+
+ALL_PRESERVED_RANGES = INDIC_RANGES + ARABIC_RANGES
+
+
+def _is_indic_or_arabic(char: str) -> bool:
+    """Check if a character belongs to an Indic or Arabic script."""
+    code_point = ord(char)
+    for start, end in ALL_PRESERVED_RANGES:
+        if start <= code_point <= end:
+            return True
+    return False
+
+
+def _is_meaningful_indic_char(char: str) -> bool:
+    """
+    Check if an Indic character is meaningful (not just a combining mark
+    that could be removed).
+    """
+    code_point = ord(char)
+    category = unicodedata.category(char)
+
+    # Preserve letters, digits, and punctuation
+    if category.startswith('L') or category.startswith('N') or category.startswith('P'):
+        return True
+
+    # Preserve dependent vowels (matras) - they change meaning
+    if 0x093E <= code_point <= 0x094C:  # Devanagari matras
+        return True
+    if 0x09BE <= code_point <= 0x09CC:  # Bengali matras
+        return True
+    if 0x0BBE <= code_point <= 0x0BCC:  # Tamil matras
+        return True
+    if 0x0C3E <= code_point <= 0x0C4C:  # Telugu matras
+        return True
+    if 0x0ABE <= code_point <= 0x0ACC:  # Gujarati matras
+        return True
+    if 0x0CBE <= code_point <= 0x0CCC:  # Kannada matras
+        return True
+    if 0x0D3E <= code_point <= 0x0D4C:  # Malayalam matras
+        return True
+
+    # Virama (halant) - used for conjuncts, preserve
+    if category == 'Mn':  # Nonspacing mark
+        return True
+
+    return False
 
 def parse_and_format_headings(line):
     """
@@ -65,15 +138,22 @@ def clean_text(text):
     text = re.sub(r'\r\n|\r', '\n', text)
 
     # -----------------------------
+    # Unicode normalization (NFC)
+    # This standardizes combining characters without removing them
+    # IMPORTANT: NFC is safe for all scripts including Indic
+    # -----------------------------
+    text = unicodedata.normalize('NFC', text)
+
+    # -----------------------------
     # Replace smart quotes
     # -----------------------------
     text = (
-        text.replace('\u201c', '"')
-            .replace('\u201d', '"')
-            .replace('\u2018', "'")
-            .replace('\u2019', "'")
-            .replace('\u201e', '"')
-            .replace('\u201f', '"')
+        text.replace('→', '"')
+            .replace('”', '"')
+            .replace('‘', "'")
+            .replace('’', "'")
+            .replace('„', '"')
+            .replace('‟', '"')
     )
 
     # -----------------------------
@@ -105,15 +185,19 @@ def clean_text(text):
             cleaned_lines.append("")
             continue
 
-        # Remove decorative separator lines
-        if re.fullmatch(r'[-_=*#+.|\\/ ]+', line.strip()):
+        # Remove decorative separator lines (ASCII only — don't match Indic chars)
+        stripped = line.strip()
+        if _is_ascii_separator(stripped):
             continue
 
-        # Remove page numbers
+        # Remove page numbers (but NOT Indic numbers which are meaningful)
         if re.fullmatch(r'\d+', line.strip()):
-            continue
+            # Only remove if it's a single ASCII number (likely a page number)
+            # Keep lines with Indic numbers as they may be meaningful content
+            if not any(_is_indic_or_arabic(c) for c in line.strip()):
+                continue
 
-        # Remove empty brackets
+        # Remove empty brackets (ASCII only)
         if re.fullmatch(r'[\[\](). ]+', line.strip()):
             continue
 
@@ -134,3 +218,15 @@ def clean_text(text):
     text = re.sub(r'\n{3,}', '\n\n', text)
 
     return text.strip()
+
+
+def _is_ascii_separator(line: str) -> bool:
+    """
+    Check if a line is a decorative separator made of ASCII characters only.
+    This avoids matching Indic script characters that could look similar.
+    """
+    if not line:
+        return False
+    # Only ASCII separator characters
+    separator_chars = set('-_=*#+.|\\/ ')
+    return all(c in separator_chars for c in line) and len(line) >= 3

@@ -1,4 +1,4 @@
-﻿
+
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -24,12 +24,13 @@ import {
     Info,
     Loader2,
     Plus,
-    Sparkles,
     Trash2,
     X,
 } from "lucide-react";
 
 import { authenticatedFetch } from "../lib/supabaseAuth";
+
+import { useI18n } from "../lib/i18n/I18nContext";
 
 import "react-day-picker/style.css";
 
@@ -37,15 +38,15 @@ import "react-day-picker/style.css";
 /* Constants                                                                  */
 /* -------------------------------------------------------------------------- */
 
-const ACCENT = "#CA8A78";
-const ACCENT_HOVER = "#B87A68";
+const ACCENT = "var(--primary)";
+const ACCENT_HOVER = "color-mix(in oklab, var(--primary) 90%, black)";
 
-const TEXT_PRIMARY = "#413632";
-const TEXT_SECONDARY = "#6B5B54";
-const TEXT_MUTED = "#9A8A82";
+const TEXT_PRIMARY = "var(--foreground)";
+const TEXT_SECONDARY = "color-mix(in oklab, var(--foreground) 70%, transparent)";
+const TEXT_MUTED = "var(--muted-foreground)";
 
-const BORDER = "#CABDB2";
-const BG_BODY = "#FFFBF0";
+const BORDER = "var(--border)";
+const BG_BODY = "var(--background)";
 
 const MONTH_LABELS = [
     "Jan",
@@ -144,7 +145,7 @@ function normalizeApiEvent(event) {
  */
 async function fetchCalendarEvents() {
     const response = await authenticatedFetch(
-        "/calender-events"
+        "/calendar-events"
     );
 
     const data = await response.json();
@@ -152,7 +153,7 @@ async function fetchCalendarEvents() {
     if (!response.ok) {
         throw new Error(
             data?.detail ||
-                "Unable to load calendar events."
+                "Couldn't load calendar events. Check your connection and try again."
         );
     }
 
@@ -271,6 +272,7 @@ function buildPrioritySeries(
 /* -------------------------------------------------------------------------- */
 
 function PriorityLineChart({ events }) {
+    const { t } = useI18n();
     const availableYears = useMemo(
         () => getAvailableYears(events),
         [events]
@@ -417,35 +419,35 @@ function PriorityLineChart({ events }) {
             : 0;
 
     return (
-        <div className="w-full rounded-xl border border-[#CABDB2]/70 bg-white/60 p-4 shadow-lg shadow-[#CA8A78]/8 backdrop-blur-md">
+        <div className="w-full rounded-xl border border-border/70 bg-card/60 p-4 shadow-lg shadow-primary/8 backdrop-blur-md">
             <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <div className="rounded-lg border border-[#CA8A78]/20 bg-[#CA8A78]/10 p-1.5">
+                    <div className="rounded-lg border border-primary/20 bg-primary/10 p-1.5">
                         <BarChart3
                             size={16}
-                            className="text-[#CA8A78]"
+                            className="text-primary"
                         />
                     </div>
 
                     <div>
-                        <h3
-                            className="text-sm font-bold tracking-tight"
-                            style={{
-                                color: TEXT_PRIMARY,
-                            }}
-                        >
-                            Priority Analysis
-                        </h3>
+                    <h3
+                        className="text-sm font-bold tracking-tight"
+                        style={{
+                            color: TEXT_PRIMARY,
+                        }}
+                    >
+                        {t("calendar.priorityAnalysis")}
+                    </h3>
 
-                        <p
-                            className="text-[10px]"
-                            style={{
-                                color: TEXT_MUTED,
-                            }}
-                        >
-                            {month === "all"
-                                ? `Across ${effectiveYear}`
-                                : `${MONTH_LABELS[month]} ${effectiveYear}`}
+                    <p
+                        className="text-[10px]"
+                        style={{
+                            color: TEXT_MUTED,
+                        }}
+                    >
+                        {month === "all"
+                            ? t("calendar.acrossYear", "Across {year}").replace("{year}", effectiveYear)
+                            : `${MONTH_LABELS[month]} ${effectiveYear}`}
                         </p>
                     </div>
                 </div>
@@ -458,13 +460,13 @@ function PriorityLineChart({ events }) {
                                 event.target.value
                             )
                         }
-                        className="cursor-pointer rounded-md border border-[#CABDB2]/60 bg-white/80 px-2 py-1 text-[10px] font-bold outline-none transition hover:border-[#CA8A78]/50"
+                        className="cursor-pointer rounded-md border border-border/60 bg-card/80 px-2 py-1 text-[10px] font-bold outline-none transition hover:border-primary/50"
                         style={{
                             color: TEXT_PRIMARY,
                         }}
                     >
                         <option value="all">
-                            All
+                            {t("calendar.all")}
                         </option>
 
                         {MONTH_LABELS.map(
@@ -494,7 +496,7 @@ function PriorityLineChart({ events }) {
                                 )
                             )
                         }
-                        className="cursor-pointer rounded-md border border-[#CABDB2]/60 bg-white/80 px-2 py-1 text-[10px] font-bold outline-none transition hover:border-[#CA8A78]/50"
+                        className="cursor-pointer rounded-md border border-border/60 bg-card/80 px-2 py-1 text-[10px] font-bold outline-none transition hover:border-primary/50"
                         style={{
                             color: TEXT_PRIMARY,
                         }}
@@ -721,7 +723,7 @@ function PriorityLineChart({ events }) {
                 {hoverValues &&
                     hoverIndex !== null && (
                         <div
-                            className="pointer-events-none absolute z-20 rounded-lg border border-[#CABDB2]/70 bg-white/95 px-2.5 py-2 shadow-md backdrop-blur-sm"
+                            className="pointer-events-none absolute z-20 rounded-lg border border-border/70 bg-card/95 px-2.5 py-2 shadow-md backdrop-blur-sm"
                             style={{
                                 left: `clamp(4px, ${
                                     (hoverX /
@@ -797,7 +799,7 @@ function PriorityLineChart({ events }) {
                     )}
             </div>
 
-            <div className="mt-2.5 flex flex-wrap items-center gap-3 border-t border-[#CABDB2]/50 pt-2">
+            <div className="mt-2.5 flex flex-wrap items-center gap-3 border-t border-border/50 pt-2">
                 {PRIORITY_KEYS.map(
                     (priority) => {
                         const config =
@@ -850,7 +852,7 @@ function CompletionBurst({ visible }) {
 
     return (
         <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden rounded-lg">
-            <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 animate-ping rounded-full bg-[#CA8A78]" />
+            <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 animate-ping rounded-full bg-primary" />
         </div>
     );
 }
@@ -860,6 +862,7 @@ function CompletionBurst({ visible }) {
 /* -------------------------------------------------------------------------- */
 
 export default function Calendar() {
+    const { t } = useI18n();
     const [selectedDate, setSelectedDate] =
         useState(new Date());
 
@@ -909,7 +912,7 @@ export default function Calendar() {
                 if (active) {
                     setEventsError(
                         error?.message ||
-                            "Unable to load calendar events."
+                            t("docs.loadError")
                     );
                 }
             })
@@ -1136,41 +1139,41 @@ export default function Calendar() {
         >
             {/* Stats */}
             <div className="grid grid-cols-4 gap-3">
-                {[
-                    {
-                        label: "Today's Events",
-                        value: todayEvents.length,
-                        icon: CalendarDays,
-                        color: "text-[#CA8A78]",
-                    },
-                    {
-                        label: "Pending",
-                        value: pendingEvents.length,
-                        icon: Clock,
-                        color: "text-[#F59E0B]",
-                    },
-                    {
-                        label: "Completed",
-                        value: completedEvents.length,
-                        icon: CheckCircle2,
-                        color: "text-[#22C55E]",
-                    },
-                    {
-                        label: "Overdue",
-                        value: overdueEvents.length,
-                        icon: AlertCircle,
-                        color: "text-[#EF4444]",
-                    },
-                ].map((stat) => {
+            {[
+                {
+                    label: t("calendar.todayEvents"),
+                    value: todayEvents.length,
+                    icon: CalendarDays,
+                    color: "text-primary",
+                },
+                {
+                    label: t("calendar.pending"),
+                    value: pendingEvents.length,
+                    icon: Clock,
+                    color: "text-[#F59E0B]",
+                },
+                {
+                    label: t("calendar.completed"),
+                    value: completedEvents.length,
+                    icon: CheckCircle2,
+                    color: "text-[#22C55E]",
+                },
+                {
+                    label: t("calendar.overdue"),
+                    value: overdueEvents.length,
+                    icon: AlertCircle,
+                    color: "text-[#EF4444]",
+                },
+            ].map((stat) => {
                     const Icon = stat.icon;
 
                     return (
                         <div
                             key={stat.label}
-                            className="flex items-center gap-3 rounded-xl border border-[#CABDB2]/70 bg-white/60 p-3 shadow-md shadow-[#CA8A78]/6 backdrop-blur-md transition-all duration-200 hover:scale-[1.02] hover:border-[#CA8A78]/40"
+                            className="flex items-center gap-3 rounded-xl border border-border/70 bg-card/60 p-3 shadow-md shadow-primary/6 backdrop-blur-md transition-all duration-200 hover:scale-[1.02] hover:border-primary/40"
                         >
                             <div
-                                className={`rounded-lg border border-[#CABDB2]/60 bg-white/80 p-2 ${stat.color}`}
+                                className={`rounded-lg border border-border/60 bg-card/80 p-2 ${stat.color}`}
                             >
                                 <Icon size={16} />
                             </div>
@@ -1207,7 +1210,7 @@ export default function Calendar() {
 
                 <div className="flex min-h-0 flex-col gap-3">
                     {/* Calendar */}
-                    <div className="select-none rounded-xl border border-[#CABDB2]/70 bg-white/60 p-3 shadow-md shadow-[#CA8A78]/6 backdrop-blur-md">
+                    <div className="select-none rounded-xl border border-border/70 bg-card/60 p-3 shadow-md shadow-primary/6 backdrop-blur-md">
                         <DayPicker
                             mode="single"
                             selected={selectedDate}
@@ -1242,18 +1245,18 @@ export default function Calendar() {
                                 dropdowns:
                                     "z-10 flex items-center gap-1.5",
                                 dropdown_root:
-                                    "relative flex items-center rounded-md border border-[#CABDB2]/60 bg-white/90 px-2 py-0.5 text-xs font-semibold transition hover:border-[#CA8A78]/50",
+                                    "relative flex items-center rounded-md border border-border/60 bg-card/90 px-2 py-0.5 text-xs font-semibold transition hover:border-primary/50",
                                 dropdown:
-                                    "cursor-pointer border-none bg-white/90 text-xs font-semibold text-[#413632] outline-none",
+                                    "cursor-pointer border-none bg-card/90 text-xs font-semibold text-foreground outline-none",
                                 nav: "flex items-center",
                                 button_previous:
-                                    "absolute left-0 top-0.5 z-20 flex h-6 w-6 items-center justify-center rounded-md border border-[#CABDB2]/60 bg-white/90 text-[#6B5B54] transition hover:border-[#CA8A78]/50 hover:text-[#CA8A78]",
+                                    "absolute left-0 top-0.5 z-20 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground transition hover:border-primary/50 hover:text-primary",
                                 button_next:
-                                    "absolute right-0 top-0.5 z-20 flex h-6 w-6 items-center justify-center rounded-md border border-[#CABDB2]/60 bg-white/90 text-[#6B5B54] transition hover:border-[#CA8A78]/50 hover:text-[#CA8A78]",
+                                    "absolute right-0 top-0.5 z-20 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground transition hover:border-primary/50 hover:text-primary",
                                 month_grid:
                                     "mx-auto w-full border-collapse",
                                 weekdays:
-                                    "mb-1 flex justify-between border-b border-[#CABDB2]/50 pb-1",
+                                    "mb-1 flex justify-between border-b border-border/50 pb-1",
                                 weekday:
                                     "w-7 text-center text-[9px] font-bold uppercase tracking-wider",
                                 week: "mt-0.5 flex justify-between",
@@ -1309,25 +1312,25 @@ export default function Calendar() {
                                                     flex h-6 w-6 items-center justify-center rounded-md text-xs font-semibold transition-all duration-150
                                                     ${
                                                         modifiers.selected
-                                                            ? "scale-110 bg-[#CA8A78] text-white shadow-sm shadow-[#CA8A78]/25"
+                                                            ? "scale-110 bg-primary text-primary-foreground shadow-sm shadow-primary/25"
                                                             : ""
                                                     }
                                                     ${
                                                         modifiers.today &&
                                                         !modifiers.selected
-                                                            ? "border border-[#CA8A78] bg-[#FFFBF0] text-[#CA8A78]"
+                                                            ? "border border-primary bg-background text-primary"
                                                             : ""
                                                     }
                                                     ${
                                                         modifiers.outside
-                                                            ? "text-[#9A8A82] opacity-40"
+                                                            ? "text-muted-foreground opacity-40"
                                                             : ""
                                                     }
                                                     ${
                                                         !modifiers.selected &&
                                                         !modifiers.today &&
                                                         !modifiers.outside
-                                                            ? "text-[#413632] hover:bg-[#FFFBF0]"
+                                                            ? "text-foreground hover:bg-background"
                                                             : ""
                                                     }
                                                 `}
@@ -1350,18 +1353,18 @@ export default function Calendar() {
                             }}
                         />
 
-                        <div className="mt-2.5 flex items-center justify-between border-t border-[#CABDB2]/50 pt-2">
+                        <div className="mt-2.5 flex items-center justify-between border-t border-border/50 pt-2">
                             <span
                                 className="text-[10px] font-bold uppercase tracking-wider"
                                 style={{
                                     color: TEXT_MUTED,
                                 }}
                             >
-                                Selected
+                                {t("calendar.selected")}
                             </span>
 
                             <span
-                                className="rounded-md border border-[#CABDB2]/60 bg-[#FFFBF0] px-2 py-0.5 text-[10px] font-bold"
+                                className="rounded-md border border-border/60 bg-background px-2 py-0.5 text-[10px] font-bold"
                                 style={{
                                     color: ACCENT,
                                 }}
@@ -1371,20 +1374,20 @@ export default function Calendar() {
                                           selectedDate,
                                           "MMM d"
                                       )
-                                    : "None"}
+                                    : t("calendar.none")}
                             </span>
                         </div>
                     </div>
 
                     {/* Priority */}
-                    <div className="rounded-xl border border-[#CABDB2]/70 bg-white/60 p-3 shadow-md shadow-[#CA8A78]/6 backdrop-blur-md">
+                    <div className="rounded-xl border border-border/70 bg-card/60 p-3 shadow-md shadow-primary/6 backdrop-blur-md">
                         <p
                             className="mb-2 text-[9px] font-bold uppercase tracking-wider"
                             style={{
                                 color: TEXT_MUTED,
                             }}
                         >
-                            Priority
+                            {t("calendar.priority")}
                         </p>
 
                         <div className="flex flex-wrap gap-1.5">
@@ -1409,7 +1412,7 @@ export default function Calendar() {
                                             key={
                                                 priority
                                             }
-                                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold text-white ${config.color}`}
+                                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold text-primary-foreground ${config.color}`}
                                         >
                                             {
                                                 config.label
@@ -1433,13 +1436,13 @@ export default function Calendar() {
                 {/* ------------------------------------------------------------------ */}
 
                 <div className="flex min-h-0 flex-col gap-3">
-                    <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-[#CABDB2]/70 bg-white/60 p-4 shadow-md shadow-[#CA8A78]/6 backdrop-blur-md">
+                    <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-border/70 bg-card/60 p-4 shadow-md shadow-primary/6 backdrop-blur-md">
                         <div className="mb-3 flex items-center justify-between">
                             <div className="flex items-center gap-2.5">
-                                <div className="rounded-lg border border-[#CA8A78]/20 bg-[#CA8A78]/10 p-1.5">
+                                <div className="rounded-lg border border-primary/20 bg-primary/10 p-1.5">
                                     <CalendarIcon
                                         size={18}
-                                        className="text-[#CA8A78]"
+                                        className="text-primary"
                                     />
                                 </div>
 
@@ -1455,7 +1458,7 @@ export default function Calendar() {
                                                   selectedDate,
                                                   "EEEE, MMMM d"
                                               )
-                                            : "Select a Date"}
+                                            : t("calendar.selectDate")}
                                     </h2>
 
                                     <p
@@ -1469,8 +1472,8 @@ export default function Calendar() {
                                         }{" "}
                                         {selectedDateEvents.length ===
                                         1
-                                            ? "event"
-                                            : "events"}
+                                            ? t("calendar.eventCount", "{count} event").replace("{count}", selectedDateEvents.length)
+                                            : t("calendar.eventCountPlural", "{count} events").replace("{count}", selectedDateEvents.length)}
                                     </p>
                                 </div>
                             </div>
@@ -1482,7 +1485,7 @@ export default function Calendar() {
                                             !current
                                     )
                                 }
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-[#CA8A78] px-3 py-1.5 text-[11px] font-bold text-white shadow-md shadow-[#CA8A78]/15 transition-all duration-200 hover:bg-[#B87A68] active:scale-[0.97]"
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground shadow-md shadow-primary/15 transition-all duration-200 hover:bg-primary/90 active:scale-[0.97]"
                             >
                                 {isAddingEvent ? (
                                     <X size={14} />
@@ -1491,8 +1494,8 @@ export default function Calendar() {
                                 )}
 
                                 {isAddingEvent
-                                    ? "Cancel"
-                                    : "Add"}
+                                    ? t("common.cancel")
+                                    : t("calendar.add")}
                             </button>
                         </div>
 
@@ -1502,11 +1505,11 @@ export default function Calendar() {
                                 onSubmit={
                                     handleAddEvent
                                 }
-                                className="mb-3 flex flex-col gap-2 rounded-lg border border-[#CABDB2]/60 bg-white/80 p-3"
+                                className="mb-3 flex flex-col gap-2 rounded-lg border border-border/60 bg-card/80 p-3"
                             >
                                 <input
                                     type="text"
-                                    placeholder="Event title..."
+                                    placeholder={t("calendar.eventTitle")}
                                     value={
                                         newEventTitle
                                     }
@@ -1519,7 +1522,7 @@ export default function Calendar() {
                                                 .value
                                         )
                                     }
-                                    className="rounded-md border border-[#CABDB2]/60 bg-white/70 px-2.5 py-1.5 text-xs placeholder-[#9A8A82] outline-none transition focus:border-[#CA8A78] focus:ring-1 focus:ring-[#CA8A78]/20"
+                                    className="rounded-md border border-border/60 bg-card/70 px-2.5 py-1.5 text-xs placeholder:text-muted-foreground outline-none transition focus:border-primary focus:ring-1 focus:ring-[#CA8A78]/20"
                                     style={{
                                         color: TEXT_PRIMARY,
                                     }}
@@ -1529,7 +1532,7 @@ export default function Calendar() {
                                 <div className="flex gap-2">
                                     <input
                                         type="text"
-                                        placeholder="Time"
+                                        placeholder={t("calendar.time")}
                                         value={
                                             newEventTime
                                         }
@@ -1542,7 +1545,7 @@ export default function Calendar() {
                                                     .value
                                             )
                                         }
-                                        className="w-24 rounded-md border border-[#CABDB2]/60 bg-white/70 px-2.5 py-1.5 text-xs outline-none transition focus:border-[#CA8A78]"
+                                        className="w-24 rounded-md border border-border/60 bg-card/70 px-2.5 py-1.5 text-xs outline-none transition focus:border-primary"
                                         style={{
                                             color: TEXT_PRIMARY,
                                         }}
@@ -1561,28 +1564,28 @@ export default function Calendar() {
                                                     .value
                                             )
                                         }
-                                        className="flex-1 rounded-md border border-[#CABDB2]/60 bg-white/70 px-2.5 py-1.5 text-xs outline-none transition focus:border-[#CA8A78]"
+                                        className="flex-1 rounded-md border border-border/60 bg-card/70 px-2.5 py-1.5 text-xs outline-none transition focus:border-primary"
                                         style={{
                                             color: TEXT_PRIMARY,
                                         }}
                                     >
                                         <option value="high">
-                                            High
+                                            {t("calendar.high")}
                                         </option>
 
                                         <option value="medium">
-                                            Medium
+                                            {t("calendar.medium")}
                                         </option>
 
                                         <option value="normal">
-                                            Low
+                                            {t("calendar.low")}
                                         </option>
                                     </select>
                                 </div>
 
                                 <input
                                     type="text"
-                                    placeholder="Category"
+                                    placeholder={t("calendar.category")}
                                     value={
                                         newEventCategory
                                     }
@@ -1595,7 +1598,7 @@ export default function Calendar() {
                                                 .value
                                         )
                                     }
-                                    className="rounded-md border border-[#CABDB2]/60 bg-white/70 px-2.5 py-1.5 text-xs outline-none transition focus:border-[#CA8A78]"
+                                    className="rounded-md border border-border/60 bg-card/70 px-2.5 py-1.5 text-xs outline-none transition focus:border-primary"
                                     style={{
                                         color: TEXT_PRIMARY,
                                     }}
@@ -1609,28 +1612,28 @@ export default function Calendar() {
                                                 false
                                             )
                                         }
-                                        className="rounded-md border border-[#CABDB2]/60 px-3 py-1 text-[10px] font-bold text-[#6B5B54] transition hover:text-[#413632]"
+                                        className="rounded-md border border-border/60 px-3 py-1 text-[10px] font-bold text-muted-foreground transition hover:text-foreground"
                                     >
-                                        Cancel
+                                        {t("common.cancel")}
                                     </button>
 
                                     <button
                                         type="submit"
-                                        className="rounded-md bg-[#CA8A78] px-3 py-1 text-[10px] font-bold text-white shadow-sm transition hover:bg-[#B87A68]"
+                                        className="rounded-md bg-primary px-3 py-1 text-[10px] font-bold text-primary-foreground shadow-sm transition hover:bg-primary/90"
                                     >
-                                        Save
+                                        {t("common.save")}
                                     </button>
                                 </div>
                             </form>
                         )}
 
                         {/* Events */}
-                        <div className="flex-1 space-y-1.5 overflow-y-auto pr-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#CABDB2] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1">
+                        <div className="flex-1 space-y-1.5 overflow-y-auto pr-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1">
                             {isEventsLoading ? (
                                 <div className="flex flex-col items-center justify-center py-10">
                                     <Loader2
                                         size={20}
-                                        className="mb-2 animate-spin text-[#CA8A78]"
+                                        className="mb-2 animate-spin text-primary"
                                     />
 
                                     <p
@@ -1639,7 +1642,7 @@ export default function Calendar() {
                                             color: TEXT_SECONDARY,
                                         }}
                                     >
-                                        Loading events...
+                                        {t("common.loading")}
                                     </p>
                                 </div>
                             ) : eventsError ? (
@@ -1655,8 +1658,7 @@ export default function Calendar() {
                                             color: TEXT_PRIMARY,
                                         }}
                                     >
-                                        Could not load
-                                        events
+                                        {t("calendar.noEvents")}
                                     </p>
 
                                     <p
@@ -1671,7 +1673,7 @@ export default function Calendar() {
                             ) : selectedDateEvents.length ===
                               0 ? (
                                 <div className="flex flex-col items-center justify-center py-10">
-                                    <div className="mb-2 rounded-full border border-[#CABDB2]/50 bg-[#FFFBF0] p-2">
+                                    <div className="mb-2 rounded-full border border-border/50 bg-background p-2">
                                         <AlertCircle
                                             size={
                                                 20
@@ -1688,8 +1690,7 @@ export default function Calendar() {
                                             color: TEXT_PRIMARY,
                                         }}
                                     >
-                                        No events
-                                        scheduled
+                                        {t("calendar.noEvents")}
                                     </p>
                                 </div>
                             ) : (
@@ -1715,7 +1716,7 @@ export default function Calendar() {
                                                     ${
                                                         event.completed
                                                             ? "border-[#FECACA]/50 bg-[#FEF2F2]/50 opacity-60"
-                                                            : "border-[#CABDB2]/50 bg-white/70 hover:border-[#CA8A78]/30"
+                                                            : "border-border/50 bg-card/70 hover:border-primary/30"
                                                     }
                                                 `}
                                             >
@@ -1736,13 +1737,13 @@ export default function Calendar() {
                                                         ${
                                                             event.completed
                                                                 ? "scale-110 text-[#22C55E]"
-                                                                : "text-[#CABDB2] hover:scale-110 hover:text-[#CA8A78]"
+                                                                : "text-muted-foreground hover:scale-110 hover:text-primary"
                                                         }
                                                     `}
                                                     aria-label={
                                                         event.completed
-                                                            ? "Mark incomplete"
-                                                            : "Mark complete"
+                                                            ? t("calendar.markIncomplete", "Mark incomplete")
+                                                            : t("calendar.markComplete", "Mark complete")
                                                     }
                                                 >
                                                     <CheckCircle2
@@ -1768,7 +1769,7 @@ export default function Calendar() {
                                                         <p
                                                             className={`truncate text-xs font-semibold ${
                                                                 event.completed
-                                                                    ? "text-[#9A8A82] line-through"
+                                                                    ? "text-muted-foreground line-through"
                                                                     : ""
                                                             }`}
                                                             style={{
@@ -1785,7 +1786,7 @@ export default function Calendar() {
 
                                                     <div className="mt-0.5 flex items-center gap-1.5">
                                                         <span
-                                                            className="rounded border border-[#CABDB2]/50 bg-[#FFFBF0] px-1.5 py-0.5 text-[9px] font-medium"
+                                                            className="rounded border border-border/50 bg-background px-1.5 py-0.5 text-[9px] font-medium"
                                                             style={{
                                                                 color: TEXT_SECONDARY,
                                                             }}
@@ -1796,9 +1797,9 @@ export default function Calendar() {
                                                         </span>
 
                                                         <span
-                                                            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-bold text-white ${config.color}`}
+                                                            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-bold text-primary-foreground ${config.color}`}
                                                         >
-                                                            <span className="h-1 w-1 rounded-full bg-white/80" />
+                                                            <span className="h-1 w-1 rounded-full bg-card/80" />
                                                             {
                                                                 config.label
                                                             }
@@ -1812,8 +1813,8 @@ export default function Calendar() {
                                                             event.id
                                                         )
                                                     }
-                                                    className="rounded p-1 text-[#CABDB2] opacity-0 transition group-hover:opacity-100 hover:bg-[#FEF2F2] hover:text-[#EF4444]"
-                                                    aria-label="Delete event"
+                                                    className="rounded p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:bg-[#FEF2F2] hover:text-[#EF4444]"
+                                                    aria-label={t("calendar.deleteEvent", "Delete event")}
                                                 >
                                                     <Trash2
                                                         size={
@@ -1836,11 +1837,11 @@ export default function Calendar() {
 
                 <div className="flex min-h-0 flex-col gap-3">
                     {/* Upcoming week */}
-                    <div className="rounded-xl border border-[#CABDB2]/70 bg-white/60 p-3 shadow-md shadow-[#CA8A78]/6 backdrop-blur-md">
+                    <div className="rounded-xl border border-border/70 bg-card/60 p-3 shadow-md shadow-primary/6 backdrop-blur-md">
                         <div className="mb-2.5 flex items-center gap-2">
                             <CalendarDays
                                 size={14}
-                                className="text-[#CA8A78]"
+                                className="text-primary"
                             />
 
                             <h3
@@ -1849,7 +1850,7 @@ export default function Calendar() {
                                     color: TEXT_PRIMARY,
                                 }}
                             >
-                                Upcoming Week
+                                {t("calendar.upcomingWeek")}
                             </h3>
                         </div>
 
@@ -1867,8 +1868,8 @@ export default function Calendar() {
                                             flex flex-col items-center gap-1 rounded-lg border p-1.5 transition-all duration-150
                                             ${
                                                 day.isToday
-                                                    ? "border-[#CA8A78] bg-[#FFFBF0] shadow-sm"
-                                                    : "border-[#CABDB2]/50 bg-white/50 hover:border-[#CA8A78]/30"
+                                                    ? "border-primary bg-background shadow-sm"
+                                                    : "border-border/50 bg-card/50 hover:border-primary/30"
                                             }
                                         `}
                                     >
@@ -1902,7 +1903,7 @@ export default function Calendar() {
 
                                         {day.count >
                                             0 && (
-                                            <span className="rounded-full bg-[#CA8A78]/10 px-1.5 py-0.5 text-[9px] font-bold text-[#CA8A78]">
+                                            <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold text-primary">
                                                 {
                                                     day.count
                                                 }
@@ -1915,22 +1916,15 @@ export default function Calendar() {
                     </div>
 
                     {/* Summary */}
-                    <div className="rounded-xl border border-[#CABDB2]/70 bg-white/60 p-3 shadow-md shadow-[#CA8A78]/6 backdrop-blur-md">
+                    <div className="rounded-xl border border-border/70 bg-card/60 p-3 shadow-md shadow-primary/6 backdrop-blur-md">
                         <div className="mb-2.5 flex items-center gap-2">
-                            <div className="rounded-lg border border-[#CA8A78]/20 bg-[#CA8A78]/10 p-1.5">
-                                <Sparkles
-                                    size={14}
-                                    className="text-[#CA8A78]"
-                                />
-                            </div>
-
                             <h3
                                 className="text-xs font-bold tracking-tight"
                                 style={{
                                     color: TEXT_PRIMARY,
                                 }}
                             >
-                                Schedule Summary
+                                {t("calendar.scheduleSummary")}
                             </h3>
                         </div>
 
@@ -1943,7 +1937,7 @@ export default function Calendar() {
                                             color: TEXT_SECONDARY,
                                         }}
                                     >
-                                        Workload
+                                        {t("calendar.workload")}
                                     </span>
 
                                     <span
@@ -1959,9 +1953,9 @@ export default function Calendar() {
                                     </span>
                                 </div>
 
-                                <div className="h-1.5 overflow-hidden rounded-full border border-[#CABDB2]/50 bg-[#FFFBF0]">
+                                <div className="h-1.5 overflow-hidden rounded-full border border-border/50 bg-background">
                                     <div
-                                        className="h-full rounded-full bg-[#CA8A78] transition-all duration-500"
+                                        className="h-full rounded-full bg-primary transition-all duration-500"
                                         style={{
                                             width: `${workloadPercent}%`,
                                         }}
@@ -1976,7 +1970,7 @@ export default function Calendar() {
                                         color: TEXT_SECONDARY,
                                     }}
                                 >
-                                    Free days this week
+                                    {t("calendar.freeDays")}
                                 </span>
 
                                 <span
@@ -1996,7 +1990,7 @@ export default function Calendar() {
                                         color: TEXT_SECONDARY,
                                     }}
                                 >
-                                    Total events
+                                    {t("calendar.totalEvents")}
                                 </span>
 
                                 <span
@@ -2021,7 +2015,7 @@ export default function Calendar() {
                                         {
                                             overdueEvents.length
                                         }{" "}
-                                        overdue
+                                        {t("calendar.overdue")}
                                     </span>
                                 </div>
                             )}
