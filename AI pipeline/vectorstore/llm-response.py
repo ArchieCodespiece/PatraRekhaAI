@@ -183,7 +183,7 @@ def generate_response(question: str, context: str) -> str:
 
     try:
         completion = client.chat.completions.create(
-            model="openai/gpt-oss-20b",
+            model="openai/gpt-oss-120b",
             messages=messages,
             temperature=0.2,
             max_completion_tokens=1024,
@@ -266,7 +266,7 @@ def generate_response_stream(question: str, context: str):
     ]
 
     stream = client.chat.completions.create(
-        model="openai/gpt-oss-20b",
+        model="openai/gpt-oss-120b",
         messages=messages,
         temperature=0.2,
         max_completion_tokens=1024,

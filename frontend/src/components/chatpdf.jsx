@@ -16,6 +16,7 @@ import {
     X,
     Search,
     Loader2,
+    Brain,
     MessageSquare,
     AlertCircle,
     Upload,
@@ -357,6 +358,11 @@ export default function ChatWithPDF() {
     const [
         isLoading,
         setIsLoading,
+    ] = useState(false);
+
+    const [
+        thinkMode,
+        setThinkMode,
     ] = useState(false);
 
 
@@ -1107,6 +1113,8 @@ export default function ChatWithPDF() {
 
                                         conversation_id:
                                             currentConversationId,
+                                        think_mode:
+                                            thinkMode,
                                     }
                                 ),
                         }
@@ -1131,6 +1139,9 @@ export default function ChatWithPDF() {
 
                 const aiMessageId = `assistant-${Date.now()}`;
 
+                let progressText = "";
+                let hasAnswerTokens = false;
+
                 setMessages(
                     (previous) => [
                         ...previous,
@@ -1141,6 +1152,7 @@ export default function ChatWithPDF() {
                             timestamp: new Date(),
                             sources: [],
                             citations: [],
+                            progressText: "",
                             streaming: true,
                         },
                     ]
@@ -1165,14 +1177,38 @@ export default function ChatWithPDF() {
 
                             if (payload.done) {
                                 finalPayload = payload;
-                            } else if (payload.token) {
-                                streamedAnswer += payload.token;
+                            } else if (payload.type === "progress") {
+                                if (!hasAnswerTokens) {
+                                    progressText = payload.message || "";
+                                }
 
                                 setMessages(
                                     (previous) =>
                                         previous.map((msg) =>
                                             msg.id === aiMessageId
-                                                ? { ...msg, content: streamedAnswer }
+                                                ? { ...msg, progressText }
+                                                : msg
+                                        )
+                                );
+                            } else if (
+                                payload.type === "token" ||
+                                payload.token
+                            ) {
+                                const token =
+                                    payload.token || "";
+
+                                hasAnswerTokens = true;
+                                streamedAnswer += token;
+
+                                setMessages(
+                                    (previous) =>
+                                        previous.map((msg) =>
+                                            msg.id === aiMessageId
+                                                ? {
+                                                    ...msg,
+                                                    content: streamedAnswer,
+                                                    progressText: "",
+                                                }
                                                 : msg
                                         )
                                 );
@@ -1192,8 +1228,14 @@ export default function ChatWithPDF() {
                                     ...msg,
                                     content: streamedAnswer || "I couldn't generate a response.",
                                     streaming: false,
+                                    progressText: "",
                                     sources: finalPayload?.sources || [],
                                     citations: finalPayload?.citations || [],
+                                    export_url: finalPayload?.export_url || null,
+                                    export_filename: finalPayload?.export_filename || null,
+                                    export_format: finalPayload?.export_format || null,
+                                    result_url: finalPayload?.result_url || null,
+                                    coverage: finalPayload?.coverage || null,
                                 }
                                 : msg
                         )
@@ -2048,6 +2090,52 @@ export default function ChatWithPDF() {
                                                         {normalizeAIResponse(message.content)}
                                                     </ReactMarkdown>
                                                 )}
+
+
+                                                {message.role ===
+                                                    "assistant" &&
+                                                    message.streaming &&
+                                                    message.progressText && (
+                                                        <div className="flex items-center gap-1.5 text-[11px] text-foreground/60 mt-1">
+                                                            <Loader2
+                                                                size={11}
+                                                                className="animate-spin shrink-0"
+                                                            />
+                                                            <span className="truncate">
+                                                                {message.progressText}
+                                                            </span>
+                                                        </div>
+                                                    )}
+
+
+                                                {message.export_url && (
+                                                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                                                        <a
+                                                            href={message.export_url}
+                                                            download={
+                                                                message.export_filename ||
+                                                                true
+                                                            }
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition font-medium"
+                                                        >
+                                                            <Download
+                                                                size={12}
+                                                            />
+                                                            <span className="truncate max-w-[220px]">
+                                                                {message.export_filename ||
+                                                                    "Download"}
+                                                            </span>
+
+                                                            {message.export_format && (
+                                                                <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary-foreground/15">
+                                                                    {message.export_format}
+                                                                </span>
+                                                            )}
+                                                        </a>
+                                                    </div>
+                                                )}
                                             </div>
 
 
@@ -2310,6 +2398,26 @@ export default function ChatWithPDF() {
 
                         </div>
 
+
+                        <button
+                            type="button"
+                            onClick={() => setThinkMode((value) => !value)}
+                            disabled={!canChat || isLoading}
+                            aria-pressed={thinkMode}
+                            title={
+                                thinkMode
+                                    ? "Think on: verify claims and re-check unsupported evidence"
+                                    : "Think off: retrieve, compare, and export faster"
+                            }
+                            className={`flex items-center justify-center gap-1.5 h-12 px-3 rounded-xl border text-xs font-medium transition shrink-0 ${
+                                thinkMode
+                                    ? "border-primary bg-primary/15 text-primary"
+                                    : "border-border/60 bg-card/70 text-foreground/70 hover:text-foreground hover:border-primary/50"
+                            } disabled:opacity-40 disabled:cursor-not-allowed`}
+                        >
+                            <Brain size={16} />
+                            <span>Think</span>
+                        </button>
 
                         <button
                             type="submit"

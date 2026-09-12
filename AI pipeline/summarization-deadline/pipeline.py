@@ -25,7 +25,7 @@ if load_dotenv:
     load_dotenv(ROOT / "backend" / ".env")
     load_dotenv(ROOT / "AI pipeline" / ".env")
 
-DEFAULT_MODEL = os.getenv("METADATA_LLM_MODEL", "openai/gpt-oss-20b")
+DEFAULT_MODEL = os.getenv("METADATA_LLM_MODEL", "openai/gpt-oss-120b")
 MAX_TEXT_CHARS = int(os.getenv("METADATA_MAX_TEXT_CHARS", "50000"))
 
 

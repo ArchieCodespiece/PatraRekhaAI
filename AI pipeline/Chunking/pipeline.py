@@ -105,7 +105,7 @@ class ChunkPipeline:
 
         raw_stem = Path(json_path).stem
         document_id = raw_stem
-        document_name = _clean_stem(raw_stem)
+        document_name = raw_stem
 
         return Document(
             document_id=document_id,
