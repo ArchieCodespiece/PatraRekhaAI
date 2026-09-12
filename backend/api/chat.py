@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any, Dict, List
 
@@ -49,6 +50,8 @@ from vectorstore.retrieval import (
 
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -481,107 +484,196 @@ def chat_stream(
     # Detect language and characteristics for the response
     lang_result = detect_language(query)
 
-    # Normalize Romanized Indic queries for better semantic retrieval
-    retrieval_query = get_retrieval_query(query)
+    # Route intent: workflow (compare / export) vs normal single-shot chat.
+    from workflows.intent import route_intent
+    from workflows.run import build_state, run_workflow_events
 
-    embedder = GeminiEmbedder()
-
-    query_embedding = embedder.embed_text(
-        retrieval_query
+    intent_result = route_intent(
+        query,
+        selected_documents,
     )
 
-    pinecone_document_names = (
-        resolve_pinecone_document_names(
-            selected_documents,
-            owner_email=effective_email,
-        )
-    )
+    if intent_result.intent == "normal":
+        # Normalize Romanized Indic queries for better semantic retrieval
+        retrieval_query = get_retrieval_query(query)
 
-    retrieval_result = get_chunks_from_documents(
-        document_names=pinecone_document_names,
-        query_embedding=query_embedding,
-        top_k=TOP_K_PER_DOCUMENT,
-        namespace=user_id,
-    )
+        embedder = GeminiEmbedder()
 
-    if isinstance(
-        retrieval_result,
-        dict,
-    ):
-        matches = retrieval_result.get(
-            "matches",
-            [],
-        )
-    else:
-        matches = getattr(
-            retrieval_result,
-            "matches",
-            [],
+        query_embedding = embedder.embed_text(
+            retrieval_query
         )
 
-    context_text = build_context_from_matches(
-        matches
-    )
-
-    citations = _build_citations(matches)
-
-    sources = [
-        citation["document_name"]
-        for citation in citations
-    ]
-
-    llm_module = load_llm_module()
-
-    def event_generator():
-        full_answer = ""
-
-        try:
-            for token in llm_module.generate_response_stream(
-                question=query,
-                context=context_text,
-            ):
-                full_answer += token
-                yield f"data: {json.dumps({'token': token})}\n\n"
-
-        except Exception as exc:
-            error_msg = (
-                "I couldn't reach the external LLM service right now, "
-                "so I'm falling back to the retrieved document context."
+        pinecone_document_names = (
+            resolve_pinecone_document_names(
+                selected_documents,
+                owner_email=effective_email,
             )
-            full_answer = error_msg
-            yield f"data: {json.dumps({'token': error_msg})}\n\n"
-
-        save_message(
-            conversation_id=conversation_id,
-            user_id=user_id,
-            role="assistant",
-            content=full_answer,
-            selected_documents=selected_documents,
-            sources=sources,
         )
 
-        if conversation.get("title") in (
-            None,
-            "",
-            "New Chat",
+        retrieval_result = get_chunks_from_documents(
+            document_names=pinecone_document_names,
+            query_embedding=query_embedding,
+            top_k=TOP_K_PER_DOCUMENT,
+            namespace=user_id,
+        )
+
+        if isinstance(
+            retrieval_result,
+            dict,
         ):
-            update_conversation(
-                conversation_id=conversation_id,
-                user_id=user_id,
-                title=query[:80],
+            matches = retrieval_result.get(
+                "matches",
+                [],
             )
         else:
-            update_conversation(
-                conversation_id=conversation_id,
-                user_id=user_id,
+            matches = getattr(
+                retrieval_result,
+                "matches",
+                [],
             )
 
-        final_payload = {
-            "conversation_id": conversation_id,
-            "sources": sources,
-            "citations": citations,
-        }
-        yield f"data: {json.dumps({'done': True, **final_payload})}\n\n"
+        context_text = build_context_from_matches(
+            matches
+        )
+
+        citations = _build_citations(matches)
+
+        sources = [
+            citation["document_name"]
+            for citation in citations
+        ]
+
+        llm_module = load_llm_module()
+
+        def event_generator():
+            full_answer = ""
+
+            try:
+                for token in llm_module.generate_response_stream(
+                    question=query,
+                    context=context_text,
+                ):
+                    full_answer += token
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+
+            except Exception:
+                logger.exception("Normal chat workflow failed")
+                error_msg = (
+                    "I couldn't reach the external LLM service right now, "
+                    "so I'm falling back to the retrieved document context."
+                )
+                full_answer = error_msg
+                yield f"data: {json.dumps({'token': error_msg})}\n\n"
+
+            save_message(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                role="assistant",
+                content=full_answer,
+                selected_documents=selected_documents,
+                sources=sources,
+            )
+
+            if conversation.get("title") in (
+                None,
+                "",
+                "New Chat",
+            ):
+                update_conversation(
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                    title=query[:80],
+                )
+            else:
+                update_conversation(
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                )
+
+            final_payload = {
+                "conversation_id": conversation_id,
+                "sources": sources,
+                "citations": citations,
+            }
+            yield f"data: {json.dumps({'done': True, **final_payload})}\n\n"
+
+    else:
+        # Workflow path (compare / export).
+        state = build_state(
+            user_id=user_id,
+            owner_email=effective_email or "",
+            effective_email=effective_email,
+            query=query,
+            conversation_id=conversation_id,
+            selected_documents=selected_documents,
+            namespace=user_id,
+            target_format=(
+                intent_result.target_format
+                or body.target_format
+            ),
+            think_mode=body.think_mode,
+        )
+
+        def event_generator():
+            full_answer = ""
+            final_payload = {
+                "conversation_id": conversation_id,
+                "sources": [],
+                "citations": [],
+            }
+
+            try:
+                for event in run_workflow_events(
+                    state,
+                    intent_result,
+                ):
+                    if event.get("type") == "token":
+                        full_answer += event.get(
+                            "token",
+                            "",
+                        )
+                    elif event.get("type") == "done":
+                        final_payload = event
+
+                    yield f"data: {json.dumps(event)}\n\n"
+
+            except Exception:
+                logger.exception("Comparison/export workflow failed")
+                error_msg = (
+                    "I couldn't complete the comparison/export workflow "
+                    "right now. Please try again."
+                )
+                full_answer = error_msg
+                yield (
+                    f"data: {json.dumps({'type': 'token', 'token': error_msg})}\n\n"
+                )
+
+            save_message(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                role="assistant",
+                content=full_answer,
+                selected_documents=selected_documents,
+                sources=final_payload.get("sources", []),
+            )
+
+            if conversation.get("title") in (
+                None,
+                "",
+                "New Chat",
+            ):
+                update_conversation(
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                    title=query[:80],
+                )
+            else:
+                update_conversation(
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                )
+
+            yield f"data: {json.dumps({'done': True, **final_payload})}\n\n"
 
     return StreamingResponse(
         event_generator(),

@@ -38,6 +38,7 @@ if load_dotenv:
     load_dotenv(ROOT / "backend" / ".env")
     load_dotenv(ROOT / "AI pipeline" / ".env")
 
+DEFAULT_MODEL = os.getenv("METADATA_LLM_MODEL", "openai/gpt-oss-120b")
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
