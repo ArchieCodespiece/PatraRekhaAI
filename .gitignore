@@ -216,3 +216,7 @@ graphify-out/
 .claude/graphify/skills/
 SKILL.md
 CLAUDE.md
+.cache/
+cache/
+backend/cache/
+*.pkl

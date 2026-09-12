@@ -360,6 +360,20 @@ def ready_documents_with_metadata(
                 "timeline_json": metadata.get(
                     "timeline_json"
                 ),
+                "dates_json": (
+                    metadata.get("dates_json")
+                    if metadata.get("dates_json") is not None
+                    else metadata.get("timeline_json")
+                ),
+                "summary_key_points": metadata.get(
+                    "summary_key_points"
+                ),
+                "summary_source_sentences": metadata.get(
+                    "summary_source_sentences"
+                ),
+                "pipeline_method": metadata.get(
+                    "pipeline_method"
+                ),
                 "metadata_created_at": metadata.get(
                     "created_at"
                 ),
@@ -480,6 +494,24 @@ def get_documents(
 
                 "timeline_json": metadata.get(
                     "timeline_json"
+                ),
+
+                "dates_json": (
+                    metadata.get("dates_json")
+                    if metadata.get("dates_json") is not None
+                    else metadata.get("timeline_json")
+                ),
+
+                "summary_key_points": metadata.get(
+                    "summary_key_points"
+                ),
+
+                "summary_source_sentences": metadata.get(
+                    "summary_source_sentences"
+                ),
+
+                "pipeline_method": metadata.get(
+                    "pipeline_method"
                 ),
 
                 "metadata_created_at": metadata.get(

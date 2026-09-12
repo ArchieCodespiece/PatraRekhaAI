@@ -109,6 +109,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 from db.files import store_file
 
 from db.gmail_connections import (
+    deactivate_gmail_connection,
     get_gmail_connection,
     list_gmail_connections,
     update_gmail_connection_tokens,
@@ -592,12 +593,53 @@ def process_metadata_for_attachment(
 # Gmail message processing
 # ============================================================================
 
+def handle_inbound_command(
+    body_text: str,
+    owner_email: str,
+    user_id: str | None = None,
+    thread_id: str | None = None,
+    sender: str | None = None,
+    subject: str | None = None,
+    source_email_id: str | None = None,
+    access_token: str | None = None,
+):
+    """Detect and handle an email-body command, returning the reply dict.
+
+    Returns ``None`` when the body is not a recognized command.
+    """
+    from services.email_command_handler import handle_email_command
+
+    result = handle_email_command(
+        body_text,
+        owner_email=owner_email,
+        user_id=user_id,
+        thread_id=thread_id,
+        sender=sender,
+        subject=subject,
+        access_token=access_token,
+    )
+
+    if not result.get("handled"):
+        return None
+
+    print(
+        f"Handled inbound email command "
+        f"'{result.get('command')}' "
+        f"(thread={thread_id or '-'}, sender={sender or '-'})"
+    )
+
+    return result
+
+
 def store_message(
     message,
     raw_message,
     gmail_msg_id: str,
     owner_email: str,
     user_id: str,
+    thread_id: str | None = None,
+    source_email_id: str | None = None,
+    access_token: str | None = None,
 ):
     """
     Process one Gmail message.
@@ -697,7 +739,57 @@ def store_message(
         }
 
     # ------------------------------------------------------------------
-    # 4. Find document attachments
+    # 4. Provenance & intent
+    # ------------------------------------------------------------------
+
+    subject = str(
+        message.get("Subject") or ""
+    ).strip()
+
+    from services.email_cleaner import (
+        classify_email_intent,
+        clean_email_body,
+        strip_html_tags,
+    )
+
+    body_text = ""
+
+    try:
+
+        body_part = message.get_body(
+            preferencelist=("plain", "html")
+        )
+
+        if body_part:
+
+            raw_payload = body_part.get_content()
+
+            if isinstance(raw_payload, str):
+
+                if (
+                    body_part.get_content_type()
+                    == "text/html"
+                ):
+                    body_text = strip_html_tags(
+                        raw_payload
+                    )
+                else:
+                    body_text = raw_payload
+
+    except Exception:
+        body_text = ""
+
+    email_body_cleaned = clean_email_body(
+        body_text
+    )
+
+    email_intent = classify_email_intent(
+        subject,
+        email_body_cleaned,
+    )
+
+    # ------------------------------------------------------------------
+    # 5. Find document attachments
     # ------------------------------------------------------------------
 
     document_attachments = []
@@ -753,24 +845,81 @@ def store_message(
         )
 
     # ------------------------------------------------------------------
-    # 5. No documents
+    # 6. Inbound command handling (reply-only email, no attachments)
+    # ------------------------------------------------------------------
+
+    if not document_attachments and email_body_cleaned.strip():
+
+        command_reply = handle_inbound_command(
+            email_body_cleaned,
+            owner_email=owner_email,
+            user_id=user_id,
+            thread_id=thread_id,
+            sender=sender,
+            subject=subject,
+            source_email_id=source_email_id,
+            access_token=access_token,
+        )
+
+        if command_reply:
+
+            _mark_cached(
+                gmail_msg_id
+            )
+
+            try:
+                mark_message_processed(
+                    gmail_msg_id,
+                    owner_email,
+                    skipped=True,
+                    skip_reason="email_command",
+                )
+            except Exception:
+                pass
+
+            return {
+                "skipped": True,
+                "command": command_reply.get("command"),
+            }
+
+    # ------------------------------------------------------------------
+    # 7. Email body fallback if no attachments
     # ------------------------------------------------------------------
 
     if not document_attachments:
 
+        if len(email_body_cleaned) >= 50:
+            email_subj = subject or "Notice"
+            email_date_str = str(message.get("Date") or "").strip()
+            email_body_doc = (
+                f"Subject: {email_subj}\n"
+                f"From: {sender}\n"
+                f"Date: {email_date_str}\n\n"
+                f"{email_body_cleaned}"
+            ).encode("utf-8")
+            safe_sub = safe_filename(email_subj, "Email")[:30]
+            document_attachments.append(
+                (
+                    None,
+                    f"Email - {safe_sub}.txt",
+                    "text/plain",
+                    email_body_doc,
+                )
+            )
+
+    # If still no documents, record skipped
+    if not document_attachments:
         _mark_cached(
             gmail_msg_id
         )
 
         try:
-
             mark_message_processed(
                 gmail_msg_id,
                 owner_email,
                 skipped=True,
                 skip_reason="no_documents",
             )
-
         except Exception:
             pass
 
@@ -780,7 +929,7 @@ def store_message(
         }
 
     # ------------------------------------------------------------------
-    # 6. Store documents
+    # 8. Store documents
     # ------------------------------------------------------------------
 
     received_at = datetime.now(
@@ -819,6 +968,11 @@ def store_message(
             owner_email=owner_email,
             user_id=user_id,
             content_hash=content_hash,
+            source_email_id=source_email_id,
+            thread_id=thread_id,
+            source_sender=sender,
+            source_subject=subject,
+            email_intent=email_intent,
         )
 
         # --------------------------------------------------------------
@@ -852,7 +1006,7 @@ def store_message(
         )
 
     # ------------------------------------------------------------------
-    # 7. Mark Gmail message processed
+    # 9. Mark Gmail message processed
     # ------------------------------------------------------------------
 
     _mark_cached(
@@ -913,24 +1067,45 @@ def refresh_access_token(
             "Content-Type":
                 "application/x-www-form-urlencoded"
         },
+        method="POST",
     )
 
-    with urlopen(
-        request,
-        timeout=30,
-    ) as response:
+    try:
 
-        return json.loads(
-            response.read().decode(
-                "utf-8"
+        with urlopen(
+            request,
+            timeout=30,
+        ) as response:
+
+            return json.loads(
+                response.read().decode(
+                    "utf-8"
+                )
             )
+
+    except HTTPError as error:
+
+        reason, message = _read_http_error(
+            error
         )
+
+        raise RuntimeError(
+            f"Gmail token refresh failed"
+            f" [{reason}]: {message}"
+        ) from error
 
 
 def _read_http_error(
     error,
 ):
-    """Extract a useful message from an HTTP error."""
+    """Extract a useful message from an HTTP error.
+
+    Handles two response formats:
+      1. OAuth token endpoint (oauth2.googleapis.com/token):
+         {"error": "invalid_grant", "error_description": "..."}
+      2. Gmail API (gmail.googleapis.com):
+         {"error": {"errors": [{"reason": ...}], "message": "..."}}
+    """
 
     try:
 
@@ -943,17 +1118,39 @@ def _read_http_error(
             payload
         )
 
-        reason = (
-            data.get("error", {})
-            .get("errors", [{}])[0]
-            .get("reason")
+        error_field = data.get(
+            "error"
         )
 
-        message = (
-            data.get("error", {})
-            .get("message")
-            or payload
-        )
+        if isinstance(
+            error_field,
+            dict,
+        ):
+
+            reason = (
+                error_field
+                .get(
+                    "errors",
+                    [{}],
+                )[0]
+                .get("reason")
+            )
+
+            message = (
+                error_field
+                .get("message")
+                or payload
+            )
+
+        else:
+
+            reason = error_field
+
+            message = (
+                data.get("error_description")
+                or data.get("message")
+                or payload
+            )
 
         return reason, message
 
@@ -1108,7 +1305,13 @@ def gmail_get_message(
     access_token,
     message_id,
 ):
-    """Download and parse a Gmail message."""
+    """Download and parse a Gmail message.
+
+    Returns
+    -------
+    (message, meta) where meta carries Gmail-provided fields
+    (``id``, ``threadId``) that are not present in the raw MIME headers.
+    """
 
     url = (
         f"{GMAIL_API_BASE}/users/me/messages/"
@@ -1120,15 +1323,23 @@ def gmail_get_message(
         access_token,
     )
 
+    meta = {
+        "id": payload.get("id") or message_id,
+        "threadId": payload.get("threadId"),
+    }
+
     raw = payload.get(
         "raw",
         "",
     )
 
-    return BytesParser(
-        policy=policy.default
-    ).parsebytes(
-        decode_base64url(raw)
+    return (
+        BytesParser(
+            policy=policy.default
+        ).parsebytes(
+            decode_base64url(raw)
+        ),
+        meta,
     )
 
 
@@ -1364,11 +1575,32 @@ def sync_gmail_connection(
 
     except Exception as error:
 
-        print(
-            f"[{_now()}] Unable to refresh "
-            f"Gmail token for {owner_email}: "
-            f"{error}"
-        )
+        error_text = str(error).lower()
+
+        if "invalid_grant" in error_text:
+
+            print(
+                f"[{_now()}] Gmail token refresh failed "
+                f"for {owner_email}: the stored refresh "
+                f"token is invalid, expired, or revoked. "
+                f"The user must re-connect Gmail via the "
+                f"frontend OAuth flow."
+            )
+
+            # Deactivate the connection so the frontend
+            # can show a "reconnect required" warning.
+            try:
+                deactivate_gmail_connection(owner_email)
+            except Exception:
+                pass
+
+        else:
+
+            print(
+                f"[{_now()}] Unable to refresh "
+                f"Gmail token for {owner_email}: "
+                f"{error}"
+            )
 
         return
 
@@ -1538,7 +1770,7 @@ def sync_gmail_connection(
 
             try:
 
-                message = (
+                message, gmail_meta = (
                     gmail_get_message(
                         access_token,
                         gmail_msg_id,
@@ -1555,6 +1787,14 @@ def sync_gmail_connection(
                     gmail_msg_id,
                     owner_email,
                     user_id,
+                    thread_id=(
+                        gmail_meta.get("threadId")
+                    ),
+                    source_email_id=(
+                        gmail_meta.get("id")
+                        or gmail_msg_id
+                    ),
+                    access_token=access_token,
                 )
 
             except Exception as error:
