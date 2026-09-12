@@ -59,6 +59,28 @@ FILE_SELECT_COLUMNS = (
     "content_hash"
 )
 
+# Superset including email provenance columns (migration: add_email_provenance.sql).
+FILE_SELECT_COLUMNS_WITH_PROVENANCE = (
+    FILE_SELECT_COLUMNS
+    + ",source_email_id,thread_id,source_sender,source_subject,email_intent"
+)
+
+
+def _run_provenance_query(select_fn, base_columns=FILE_SELECT_COLUMNS):
+    """Build and execute a select query using the provenance column set,
+    falling back to the base column set if the new columns have not been
+    migrated yet. ``select_fn(columns)`` returns a ready-to-execute query."""
+    try:
+        return (
+            select_fn(
+                FILE_SELECT_COLUMNS_WITH_PROVENANCE
+            ).execute()
+        )
+    except Exception:
+        return (
+            select_fn(base_columns).execute()
+        )
+
 
 # ============================================================================
 # User / path helpers
@@ -250,12 +272,12 @@ def trigger_processing_webhook(file_record):
 # ============================================================================
 
 def find_file_by_content_hash(
-    content_hash: str,
-    owner_email: str | None = None,
-    user_id: str | UUID | None = None,
-) -> dict | None:
+    content_hash,
+    owner_email=None,
+    user_id=None,
+):
     """
-    Return an existing file record matching the content hash.
+    Look up a file record by content hash.
 
     Deduplication is scoped to the user.
     """
@@ -267,7 +289,7 @@ def find_file_by_content_hash(
 
     query = (
         supabase.table(FILES_TABLE)
-        .select(FILE_SELECT_COLUMNS)
+        .select(FILE_SELECT_COLUMNS_WITH_PROVENANCE)
         .eq("content_hash", content_hash)
     )
 
@@ -308,6 +330,11 @@ def insert_file_record(
     owner_email=None,
     user_id=None,
     content_hash: str | None = None,
+    source_email_id: str | None = None,
+    thread_id: str | None = None,
+    source_sender: str | None = None,
+    source_subject: str | None = None,
+    email_intent: str | None = None,
 ):
     """
     Insert a new file record.
@@ -357,7 +384,7 @@ def insert_file_record(
     try:
         url_query = (
             supabase.table(FILES_TABLE)
-            .select(FILE_SELECT_COLUMNS)
+            .select(FILE_SELECT_COLUMNS_WITH_PROVENANCE)
             .eq("file_url", file_url)
             .eq("user_id", user_id)
         )
@@ -400,6 +427,17 @@ def insert_file_record(
     if content_hash:
         row["content_hash"] = content_hash
 
+    if source_email_id is not None:
+        row["source_email_id"] = source_email_id
+    if thread_id is not None:
+        row["thread_id"] = thread_id
+    if source_sender is not None:
+        row["source_sender"] = source_sender
+    if source_subject is not None:
+        row["source_subject"] = source_subject
+    if email_intent is not None:
+        row["email_intent"] = email_intent
+
     try:
 
         response = (
@@ -437,7 +475,7 @@ def insert_file_record(
 
                 url_query = (
                     supabase.table(FILES_TABLE)
-                    .select(FILE_SELECT_COLUMNS)
+                    .select(FILE_SELECT_COLUMNS_WITH_PROVENANCE)
                     .eq("file_url", file_url)
                     .eq("user_id", user_id)
                 )
@@ -474,6 +512,11 @@ def store_file(
     owner_email=None,
     user_id=None,
     content_hash: str | None = None,
+    source_email_id: str | None = None,
+    thread_id: str | None = None,
+    source_sender: str | None = None,
+    source_subject: str | None = None,
+    email_intent: str | None = None,
 ):
     """
     Upload content to the existing Supabase Storage bucket
@@ -516,6 +559,11 @@ def store_file(
         owner_email=owner_email,
         user_id=user_id,
         content_hash=content_hash,
+        source_email_id=source_email_id,
+        thread_id=thread_id,
+        source_sender=source_sender,
+        source_subject=source_subject,
+        email_intent=email_intent,
     )
 
 
@@ -531,29 +579,32 @@ def list_documents(
 
     owner_email = normalize_owner_email(owner_email)
 
-    query = (
-        supabase.table(FILES_TABLE)
-        .select(FILE_SELECT_COLUMNS)
-    )
-
-    if user_id:
-
-        query = query.eq(
-            "user_id",
-            normalize_user_id(user_id),
+    def _build(columns):
+        query = (
+            supabase.table(FILES_TABLE)
+            .select(columns)
         )
 
-    elif owner_email:
+        if user_id:
 
-        query = query.eq(
-            "owner_email",
-            owner_email,
+            query = query.eq(
+                "user_id",
+                normalize_user_id(user_id),
+            )
+
+        elif owner_email:
+
+            query = query.eq(
+                "owner_email",
+                owner_email,
+            )
+
+        return query.order(
+            "uploaded_at",
+            desc=True,
         )
 
-    response = query.order(
-        "uploaded_at",
-        desc=True,
-    ).execute()
+    response = _run_provenance_query(_build)
 
     return response.data
 
@@ -566,31 +617,34 @@ def list_ready_documents(
 
     owner_email = normalize_owner_email(owner_email)
 
-    query = (
-        supabase.table(FILES_TABLE)
-        .select(FILE_SELECT_COLUMNS)
-        .eq("is_summarized", True)
-        .eq("is_vectored", True)
-    )
-
-    if user_id:
-
-        query = query.eq(
-            "user_id",
-            normalize_user_id(user_id),
+    def _build(columns):
+        query = (
+            supabase.table(FILES_TABLE)
+            .select(columns)
+            .eq("is_summarized", True)
+            .eq("is_vectored", True)
         )
 
-    elif owner_email:
+        if user_id:
 
-        query = query.eq(
-            "owner_email",
-            owner_email,
+            query = query.eq(
+                "user_id",
+                normalize_user_id(user_id),
+            )
+
+        elif owner_email:
+
+            query = query.eq(
+                "owner_email",
+                owner_email,
+            )
+
+        return query.order(
+            "uploaded_at",
+            desc=True,
         )
 
-    response = query.order(
-        "uploaded_at",
-        desc=True,
-    ).execute()
+    response = _run_provenance_query(_build)
 
     return response.data
 
@@ -610,27 +664,30 @@ def get_document(
 
     UUID(str(file_id))
 
-    query = (
-        supabase.table(FILES_TABLE)
-        .select(FILE_SELECT_COLUMNS)
-        .eq("file_id", str(file_id))
-    )
-
-    if user_id:
-
-        query = query.eq(
-            "user_id",
-            normalize_user_id(user_id),
+    def _build(columns):
+        query = (
+            supabase.table(FILES_TABLE)
+            .select(columns)
+            .eq("file_id", str(file_id))
         )
 
-    elif owner_email:
+        if user_id:
 
-        query = query.eq(
-            "owner_email",
-            owner_email,
-        )
+            query = query.eq(
+                "user_id",
+                normalize_user_id(user_id),
+            )
 
-    response = query.limit(1).execute()
+        elif owner_email:
+
+            query = query.eq(
+                "owner_email",
+                owner_email,
+            )
+
+        return query.limit(1)
+
+    response = _run_provenance_query(_build)
 
     return (
         response.data[0]

@@ -260,8 +260,8 @@ export default function DashboardHome() {
     /* ---- Render ---- */
 
     return (
-        <div className="min-h-screen bg-background text-foreground">
-            <div className="mx-auto w-full max-w-5xl p-5 md:p-8 lg:p-10">
+        <div className="h-full bg-background text-foreground">
+            <div className="w-full p-5 md:p-8 lg:p-10">
 
                 {/* Header */}
                 <div className="mb-8">
@@ -552,10 +552,21 @@ export default function DashboardHome() {
                                 icon={Mail}
                                 title={t("dashboard.integrations", "Integrations")}
                             />
-                            <div className="rounded-xl border border-border bg-card p-4">
+                            <div className={`rounded-xl border p-4 ${
+                                gmailStatus.connected && !gmailStatus.active
+                                    ? "border-amber-500/40 bg-amber-500/5"
+                                    : "border-border bg-card"
+                            }`}>
                                 <div className="flex items-center gap-3">
-                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                                        <Mail size={18} className="text-primary" />
+                                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                                        gmailStatus.connected && !gmailStatus.active
+                                            ? "bg-amber-500/10"
+                                            : "bg-primary/10"
+                                    }`}>
+                                        {gmailStatus.connected && !gmailStatus.active
+                                            ? <AlertTriangle size={18} className="text-amber-500" />
+                                            : <Mail size={18} className="text-primary" />
+                                        }
                                     </div>
                                     <div className="min-w-0 flex-1">
                                         <p className="text-sm font-medium text-foreground">Gmail</p>
@@ -565,8 +576,33 @@ export default function DashboardHome() {
                                                 : t("dashboard.notConnected", "Not connected")}
                                         </p>
                                     </div>
-                                    <StatusBadgeInline connected={gmailStatus.connected} />
+                                    <StatusBadgeInline
+                                        connected={gmailStatus.connected}
+                                        active={gmailStatus.active}
+                                    />
                                 </div>
+                                {/* Token revoked — reconnect required */}
+                                {gmailStatus.connected && !gmailStatus.active && (
+                                    <div className="mt-3">
+                                        <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
+                                            {t(
+                                                "dashboard.gmailReconnectRequired",
+                                                "Gmail access was revoked or expired. Please reconnect to resume email sync."
+                                            )}
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={connectGmail}
+                                            disabled={gmailLoading || !user?.email}
+                                            className="w-full rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {gmailLoading
+                                                ? t("dashboard.connecting", "Connecting...")
+                                                : t("dashboard.reconnectGmail", "Reconnect Gmail")}
+                                        </button>
+                                    </div>
+                                )}
+                                {/* Not connected at all */}
                                 {!gmailStatus.connected && (
                                     <button
                                         type="button"
@@ -643,7 +679,16 @@ export default function DashboardHome() {
 /* Small inline components                                                     */
 /* -------------------------------------------------------------------------- */
 
-function StatusBadgeInline({ connected }) {
+function StatusBadgeInline({ connected, active }) {
+    // connected + inactive = token revoked, reconnect required
+    if (connected && !active) {
+        return (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                Action needed
+            </span>
+        );
+    }
     return (
         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
             connected

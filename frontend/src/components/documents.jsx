@@ -2259,10 +2259,18 @@ function DocumentDetails({
                                         </div>
 
                                         <div className="pb-1">
-                                            <p className="inline-flex rounded-md bg-amber-500/20 px-2 py-1 text-xs font-bold text-amber-700 dark:text-amber-300">
-                                                {item.date ||
-                                                    t("docs.dateNotSpecified")}
-                                            </p>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <p className="inline-flex rounded-md bg-amber-500/20 px-2 py-1 text-xs font-bold text-amber-700 dark:text-amber-300">
+                                                    {item.date ||
+                                                        t("docs.dateNotSpecified")}
+                                                </p>
+
+                                                {item.page ? (
+                                                    <p className="inline-flex rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
+                                                        {t("docs.sourcePage", "Page {page}").replace("{page}", item.page)}
+                                                    </p>
+                                                ) : null}
+                                            </div>
 
                                             <p className="mt-1 text-sm leading-5 text-foreground">
                                                 {item.event ||

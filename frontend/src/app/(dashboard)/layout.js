@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "../../components/sidebar";
 import AuthGuard from "../../components/AuthGuard";
 import ErrorBoundary from "../../components/ErrorBoundary";
@@ -11,6 +11,8 @@ import {
 } from "../../lib/supabaseAuth";
 
 export default function DashboardLayout({ children }) {
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
     useEffect(() => {
         let mounted = true;
 
@@ -43,8 +45,11 @@ export default function DashboardLayout({ children }) {
     return (
         <AuthGuard>
             <ErrorBoundary>
-                <div className="flex min-h-screen">
-                    <Sidebar />
+                <div className="flex h-screen overflow-hidden bg-background">
+                    <Sidebar
+                        collapsed={sidebarCollapsed}
+                        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+                    />
 
                     <main className="flex-1 overflow-auto pt-14 lg:pt-0">
                         {children}

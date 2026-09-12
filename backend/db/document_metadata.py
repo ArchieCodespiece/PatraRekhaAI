@@ -17,6 +17,10 @@ DOCUMENT_METADATA_SELECT_COLUMNS_WITH_LANG = (
     "file_id,file_heading,summarization,timeline_json,created_at,updated_at,"
     "language,languages,script,scripts,language_confidence,is_romanized,is_code_switched"
 )
+DOCUMENT_METADATA_SELECT_COLUMNS_WITH_EXTRACTION = (
+    DOCUMENT_METADATA_SELECT_COLUMNS_WITH_LANG
+    + ",dates_json,summary_key_points,summary_source_sentences,pipeline_method,actions_json"
+)
 
 
 def upsert_document_metadata(
@@ -31,6 +35,11 @@ def upsert_document_metadata(
     language_confidence: float | None = None,
     is_romanized: bool | None = None,
     is_code_switched: bool | None = None,
+    dates_json: list | dict | None = None,
+    summary_key_points: list | None = None,
+    summary_source_sentences: list | None = None,
+    pipeline_method: str | None = None,
+    actions_json: list | dict | None = None,
 ):
     """
     Insert or update LLM-extracted document metadata for a file.
@@ -88,6 +97,20 @@ def upsert_document_metadata(
     if is_code_switched is not None:
         row["is_code_switched"] = bool(is_code_switched)
 
+    # Extractive-extraction metadata (new columns; guarded by the fallback below)
+    if dates_json is not None:
+        row["dates_json"] = json.dumps(dates_json, ensure_ascii=False)
+    if summary_key_points is not None:
+        row["summary_key_points"] = json.dumps(summary_key_points, ensure_ascii=False)
+    if summary_source_sentences is not None:
+        row["summary_source_sentences"] = json.dumps(
+            summary_source_sentences, ensure_ascii=False
+        )
+    if pipeline_method is not None:
+        row["pipeline_method"] = pipeline_method
+    if actions_json is not None:
+        row["actions_json"] = json.dumps(actions_json, ensure_ascii=False)
+
     try:
         response = (
             supabase.table(DOCUMENT_METADATA_TABLE)
@@ -95,18 +118,32 @@ def upsert_document_metadata(
             .execute()
         )
     except Exception:
-        # Language columns may not exist yet — upsert without them
+        # Newer columns may not exist yet — upsert without them
+        safe_keys = {
+            "file_id",
+            "file_heading",
+            "summarization",
+            "timeline_json",
+            "updated_at",
+        }
+        if language is not None:
+            safe_keys.add("language")
+        if languages is not None:
+            safe_keys.add("languages")
+        if script is not None:
+            safe_keys.add("script")
+        if scripts is not None:
+            safe_keys.add("scripts")
+        if language_confidence is not None:
+            safe_keys.add("language_confidence")
+        if is_romanized is not None:
+            safe_keys.add("is_romanized")
+        if is_code_switched is not None:
+            safe_keys.add("is_code_switched")
         safe_row = {
             k: v
             for k, v in row.items()
-            if k
-            in {
-                "file_id",
-                "file_heading",
-                "summarization",
-                "timeline_json",
-                "updated_at",
-            }
+            if k in safe_keys
         }
         response = (
             supabase.table(DOCUMENT_METADATA_TABLE)
@@ -117,17 +154,22 @@ def upsert_document_metadata(
     return response.data[0] if response.data else None
 
 
-def list_document_metadata_by_file_ids(file_ids: list[str]):
+def list_document_metadata_by_file_ids(file_ids: list[str], with_extraction: bool = True):
     if not file_ids:
         return []
 
     for file_id in file_ids:
         UUID(str(file_id))
 
+    if with_extraction:
+        select_cols = DOCUMENT_METADATA_SELECT_COLUMNS_WITH_EXTRACTION
+    else:
+        select_cols = DOCUMENT_METADATA_SELECT_COLUMNS_WITH_LANG
+
     try:
         response = (
             supabase.table(DOCUMENT_METADATA_TABLE)
-            .select(DOCUMENT_METADATA_SELECT_COLUMNS_WITH_LANG)
+            .select(select_cols)
             .in_("file_id", [str(file_id) for file_id in file_ids])
             .execute()
         )

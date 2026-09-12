@@ -2,7 +2,7 @@ import Calendar from "../../../components/calendar";
 
 export default function CalendarPage() {
     return (
-        <div className="h-screen p-4 bg-background">
+        <div className="h-screen bg-background">
             <Calendar />
         </div>
     );

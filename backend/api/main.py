@@ -141,6 +141,7 @@ from api.documents import router as document_router
 from api.chat import router as chat_router
 from api.calendar import router as calendar_router
 from api.gmail import router as gmail_router
+from api.deadlines import router as deadlines_router
 
 app.include_router(health_router)
 app.include_router(conversations_router)
@@ -148,3 +149,4 @@ app.include_router(document_router)
 app.include_router(chat_router)
 app.include_router(calendar_router)
 app.include_router(gmail_router)
+app.include_router(deadlines_router)

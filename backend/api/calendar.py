@@ -62,36 +62,37 @@ def parse_timeline_json(
 def parse_dd_mm_yyyy(
     value: str,
 ):
-    import re
+    from document_preprocessing.date_utils import normalise_date_iso
 
-    match = re.search(
-        r"\b(\d{1,2})/"
-        r"(\d{1,2})/"
-        r"(\d{4})\b",
-        value or "",
-    )
-
-    if not match:
+    iso = normalise_date_iso(value)
+    if not iso:
         return None
 
-    day, month, year = (
-        int(part)
-        for part in match.groups()
-    )
-
     try:
-        return date(
-            year,
-            month,
-            day,
-        )
+        return date.fromisoformat(iso)
     except ValueError:
         return None
 
 
+_HIGH_EVENT_TYPES = frozenset({
+    "DEADLINE", "SUBMISSION", "DUE", "AWARD", "CLOSE", "PAYMENT",
+})
+_MEDIUM_EVENT_TYPES = frozenset({
+    "OPEN", "START", "NOTIFICATION", "VISIT", "PRESENTATION", "MEETING",
+})
+
+
 def event_priority(
     event_text: str,
+    event_type: str | None = None,
 ):
+    if event_type:
+        upper = event_type.upper()
+        if upper in _HIGH_EVENT_TYPES:
+            return "high"
+        if upper in _MEDIUM_EVENT_TYPES:
+            return "medium"
+
     text = (
         event_text or ""
     ).lower()
@@ -172,8 +173,14 @@ def get_calendar_events(
             or "Untitled Document"
         )
 
-        timeline_items = parse_timeline_json(
-            metadata.get("timeline_json")
+        # Rich dates_json takes precedence; older rows only carry timeline_json.
+        date_entities = metadata.get("dates_json")
+        timeline_items = (
+            parse_timeline_json(date_entities)
+            if date_entities
+            else parse_timeline_json(
+                metadata.get("timeline_json")
+            )
         )
 
         for index, item in enumerate(
@@ -192,10 +199,13 @@ def get_calendar_events(
             event_text = (
                 str(
                     item.get("event")
+                    or item.get("event_label")
                     or ""
                 ).strip()
                 or "Important date"
             )
+
+            event_type = item.get("event_type")
 
             events.append(
                 {
@@ -208,8 +218,10 @@ def get_calendar_events(
                     "time": "All Day",
                     "category": "Document",
                     "priority": event_priority(
-                        event_text
+                        event_text,
+                        event_type,
                     ),
+                    "page": item.get("page"),
                     "completed": False,
                 }
             )
