@@ -460,7 +460,7 @@ export default function DashboardHome() {
                                     {upcomingDeadlines.map((event, idx) => (
                                         <div
                                             key={event.id || idx}
-                                            className="flex items-center gap-3 rounded-xl border border-border bg-card p-3"
+                                            className="flex items-start gap-3 rounded-xl border border-border bg-card p-3"
                                         >
                                             <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg bg-primary/10">
                                                 <span className="text-[10px] font-bold text-primary leading-none">
@@ -468,16 +468,16 @@ export default function DashboardHome() {
                                                 </span>
                                             </div>
                                             <div className="min-w-0 flex-1">
-                                                <p className="truncate text-sm font-medium text-foreground">
+                                                <p className="break-words whitespace-normal text-sm font-medium text-foreground">
                                                     {event.title || event.event || "Untitled deadline"}
                                                 </p>
-                                                <p className="text-xs text-muted-foreground">
+                                                <p className="mt-1 text-xs text-muted-foreground">
                                                     {event.date ? new Date(event.date).toLocaleDateString() : ""}
                                                     {event.source_document ? ` · ${event.source_document}` : ""}
                                                 </p>
                                             </div>
                                             {event.priority === "high" && (
-                                                <AlertTriangle size={14} className="shrink-0 text-amber-500" />
+                                                <AlertTriangle size={14} className="mt-1 shrink-0 text-amber-500" />
                                             )}
                                         </div>
                                     ))}

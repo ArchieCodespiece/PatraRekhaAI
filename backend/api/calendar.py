@@ -124,6 +124,27 @@ def event_priority(
     return "normal"
 
 
+from pydantic import BaseModel
+
+from db.calendar_events import (
+    add_custom_event,
+    get_user_events_and_overrides,
+    update_event_status,
+)
+
+
+class CreateEventPayload(BaseModel):
+    title: str
+    date: str
+    time: str = "All Day"
+    category: str = "Meeting"
+    priority: str = "normal"
+
+
+class UpdateEventPayload(BaseModel):
+    completed: bool | None = None
+
+
 # ============================================================================
 # CALENDAR
 # ============================================================================
@@ -138,6 +159,11 @@ def get_calendar_events(
     effective_email = verify_requested_email(
         owner_email,
         authenticated_email,
+    )
+
+    user_identifier = str(user_id or effective_email)
+    custom_events, overrides = get_user_events_and_overrides(
+        user_identifier
     )
 
     documents = list_documents(
@@ -186,6 +212,12 @@ def get_calendar_events(
         for index, item in enumerate(
             timeline_items
         ):
+            evt_id = f"{file_id}-{index}"
+            override = overrides.get(evt_id, {})
+
+            if override.get("is_deleted"):
+                continue
+
             event_date = parse_dd_mm_yyyy(
                 str(
                     item.get("date")
@@ -209,7 +241,7 @@ def get_calendar_events(
 
             events.append(
                 {
-                    "id": f"{file_id}-{index}",
+                    "id": evt_id,
                     "file_id": file_id,
                     "file_heading": file_heading,
                     "date": event_date.isoformat(),
@@ -222,9 +254,14 @@ def get_calendar_events(
                         event_type,
                     ),
                     "page": item.get("page"),
-                    "completed": False,
+                    "completed": override.get(
+                        "completed", False
+                    ),
                 }
             )
+
+    for ce in custom_events:
+        events.append(ce)
 
     events.sort(
         key=lambda event:
@@ -234,3 +271,52 @@ def get_calendar_events(
     return {
         "events": events
     }
+
+
+@router.post("/calendar-events")
+def create_calendar_event(
+    payload: CreateEventPayload,
+    identity=Depends(get_authenticated_identity),
+):
+    user_id, authenticated_email = identity
+    user_identifier = str(user_id or authenticated_email)
+
+    result = add_custom_event(
+        user_identifier,
+        payload.model_dump() if hasattr(payload, "model_dump") else payload.dict(),
+    )
+    return {"success": True, "event": result}
+
+
+@router.patch("/calendar-events/{event_id:path}")
+def update_calendar_event(
+    event_id: str,
+    payload: UpdateEventPayload,
+    identity=Depends(get_authenticated_identity),
+):
+    user_id, authenticated_email = identity
+    user_identifier = str(user_id or authenticated_email)
+
+    result = update_event_status(
+        user_identifier,
+        event_id,
+        completed=payload.completed,
+    )
+    return {"success": True, "event": result}
+
+
+@router.delete("/calendar-events/{event_id:path}")
+def delete_calendar_event(
+    event_id: str,
+    identity=Depends(get_authenticated_identity),
+):
+    user_id, authenticated_email = identity
+    user_identifier = str(user_id or authenticated_email)
+
+    result = update_event_status(
+        user_identifier,
+        event_id,
+        is_deleted=True,
+    )
+    return {"success": True, "event": result}
+

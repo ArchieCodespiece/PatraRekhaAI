@@ -128,6 +128,57 @@ function normalizeApiEvent(event) {
     };
 }
 
+function getLocalCompletedIds() {
+    try {
+        const item = typeof window !== "undefined" ? localStorage.getItem("patrarekha_calendar_completed") : null;
+        return item ? new Set(JSON.parse(item)) : new Set();
+    } catch {
+        return new Set();
+    }
+}
+
+function saveLocalCompletedIds(set) {
+    try {
+        if (typeof window !== "undefined") {
+            localStorage.setItem("patrarekha_calendar_completed", JSON.stringify([...set]));
+        }
+    } catch {}
+}
+
+function getLocalDeletedIds() {
+    try {
+        const item = typeof window !== "undefined" ? localStorage.getItem("patrarekha_calendar_deleted") : null;
+        return item ? new Set(JSON.parse(item)) : new Set();
+    } catch {
+        return new Set();
+    }
+}
+
+function saveLocalDeletedIds(set) {
+    try {
+        if (typeof window !== "undefined") {
+            localStorage.setItem("patrarekha_calendar_deleted", JSON.stringify([...set]));
+        }
+    } catch {}
+}
+
+function getLocalCustomEvents() {
+    try {
+        const item = typeof window !== "undefined" ? localStorage.getItem("patrarekha_calendar_custom") : null;
+        return item ? JSON.parse(item).map(normalizeApiEvent) : [];
+    } catch {
+        return [];
+    }
+}
+
+function saveLocalCustomEvents(events) {
+    try {
+        if (typeof window !== "undefined") {
+            localStorage.setItem("patrarekha_calendar_custom", JSON.stringify(events));
+        }
+    } catch {}
+}
+
 /* -------------------------------------------------------------------------- */
 /* Calendar API                                                               */
 /* -------------------------------------------------------------------------- */
@@ -213,6 +264,7 @@ function buildPrioritySeries(
         for (let currentMonth = 0; currentMonth < 12; currentMonth++) {
             const monthEvents = events.filter(
                 (event) =>
+                    !event.completed &&
                     event.date.getFullYear() === year &&
                     event.date.getMonth() === currentMonth
             );
@@ -246,6 +298,7 @@ function buildPrioritySeries(
     for (let day = 1; day <= dayCount; day++) {
         const dayEvents = events.filter(
             (event) =>
+                !event.completed &&
                 event.date.getFullYear() === year &&
                 event.date.getMonth() === month &&
                 event.date.getDate() === day
@@ -905,15 +958,50 @@ export default function Calendar() {
         fetchCalendarEvents()
             .then((nextEvents) => {
                 if (active) {
-                    setEvents(nextEvents);
+                    const completedSet = getLocalCompletedIds();
+                    const deletedSet = getLocalDeletedIds();
+                    const localCustoms = getLocalCustomEvents();
+
+                    let merged = (nextEvents || [])
+                        .filter((evt) => !deletedSet.has(evt.id))
+                        .map((evt) => ({
+                            ...evt,
+                            completed: completedSet.has(evt.id) ? true : evt.completed,
+                        }));
+
+                    const existingIds = new Set(merged.map((e) => e.id));
+                    localCustoms.forEach((ce) => {
+                        if (!existingIds.has(ce.id) && !deletedSet.has(ce.id)) {
+                            merged.push({
+                                ...ce,
+                                completed: completedSet.has(ce.id) ? true : ce.completed,
+                            });
+                        }
+                    });
+
+                    setEvents(merged);
                 }
             })
             .catch((error) => {
                 if (active) {
-                    setEventsError(
-                        error?.message ||
-                            t("docs.loadError")
-                    );
+                    const completedSet = getLocalCompletedIds();
+                    const deletedSet = getLocalDeletedIds();
+                    const localCustoms = getLocalCustomEvents();
+
+                    if (localCustoms.length > 0) {
+                        let merged = localCustoms
+                            .filter((evt) => !deletedSet.has(evt.id))
+                            .map((evt) => ({
+                                ...evt,
+                                completed: completedSet.has(evt.id) ? true : evt.completed,
+                            }));
+                        setEvents(merged);
+                    } else {
+                        setEventsError(
+                            error?.message ||
+                                t("docs.loadError")
+                        );
+                    }
                 }
             })
             .finally(() => {
@@ -1056,17 +1144,39 @@ export default function Calendar() {
     /* ---------------------------------------------------------------------- */
 
     const toggleEventComplete = (id) => {
+        const targetEvent = events.find((e) => e.id === id);
+        if (!targetEvent) return;
+        const nextCompleted = !targetEvent.completed;
+
         setEvents((current) =>
             current.map((event) =>
                 event.id === id
                     ? {
                           ...event,
-                          completed:
-                              !event.completed,
+                          completed: nextCompleted,
                       }
                     : event
             )
         );
+
+        const completedSet = getLocalCompletedIds();
+        if (nextCompleted) {
+            completedSet.add(id);
+        } else {
+            completedSet.delete(id);
+        }
+        saveLocalCompletedIds(completedSet);
+
+        authenticatedFetch(
+            `/calendar-events/${encodeURIComponent(id)}`,
+            {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ completed: nextCompleted }),
+            }
+        ).catch((err) => {
+            console.warn("Backend persistence notice:", err);
+        });
     };
 
     const triggerCompletion = (id) => {
@@ -1086,6 +1196,26 @@ export default function Calendar() {
                     event.id !== id
             )
         );
+
+        const deletedSet = getLocalDeletedIds();
+        deletedSet.add(id);
+        saveLocalDeletedIds(deletedSet);
+
+        const completedSet = getLocalCompletedIds();
+        completedSet.delete(id);
+        saveLocalCompletedIds(completedSet);
+
+        const updatedCustoms = getLocalCustomEvents().filter((e) => e.id !== id);
+        saveLocalCustomEvents(updatedCustoms);
+
+        authenticatedFetch(
+            `/calendar-events/${encodeURIComponent(id)}`,
+            {
+                method: "DELETE",
+            }
+        ).catch((err) => {
+            console.warn("Backend deletion notice:", err);
+        });
     };
 
     const handleAddEvent = (event) => {
@@ -1098,32 +1228,50 @@ export default function Calendar() {
             return;
         }
 
-        const newEvent = {
-            id: `local-${Date.now()}`,
+        const dateStr = format(selectedDate, "yyyy-MM-dd");
+        const newId = `custom-${Date.now()}`;
+        const newEvt = {
+            id: newId,
             date: selectedDate,
             title: newEventTitle.trim(),
-            time:
-                newEventTime ||
-                "All Day",
-            category:
-                newEventCategory ||
-                "Meeting",
-            priority:
-                newEventPriority,
+            time: newEventTime || "All Day",
+            category: newEventCategory || "Meeting",
+            priority: newEventPriority,
             completed: false,
             fileHeading: null,
         };
 
         setEvents((current) => [
             ...current,
-            newEvent,
+            newEvt,
         ]);
+
+        const localCustoms = getLocalCustomEvents();
+        localCustoms.push({
+            ...newEvt,
+            date: dateStr,
+        });
+        saveLocalCustomEvents(localCustoms);
 
         setNewEventTitle("");
         setNewEventTime("09:00 AM");
         setNewEventCategory("Meeting");
         setNewEventPriority("normal");
         setIsAddingEvent(false);
+
+        authenticatedFetch("/calendar-events", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                title: newEvt.title,
+                date: dateStr,
+                time: newEvt.time,
+                category: newEvt.category,
+                priority: newEvt.priority,
+            }),
+        }).catch((err) => {
+            console.warn("Backend add event notice:", err);
+        });
     };
 
     /* ---------------------------------------------------------------------- */
@@ -1403,6 +1551,7 @@ export default function Calendar() {
                                             (
                                                 event
                                             ) =>
+                                                !event.completed &&
                                                 event.priority ===
                                                 priority
                                         ).length;
@@ -1467,11 +1616,7 @@ export default function Calendar() {
                                             color: TEXT_MUTED,
                                         }}
                                     >
-                                        {
-                                            selectedDateEvents.length
-                                        }{" "}
-                                        {selectedDateEvents.length ===
-                                        1
+                                        {selectedDateEvents.length === 1
                                             ? t("calendar.eventCount", "{count} event").replace("{count}", selectedDateEvents.length)
                                             : t("calendar.eventCountPlural", "{count} events").replace("{count}", selectedDateEvents.length)}
                                     </p>
@@ -1712,7 +1857,7 @@ export default function Calendar() {
                                                     event.id
                                                 }
                                                 className={`
-                                                    group relative flex items-center gap-2.5 rounded-lg border px-2.5 py-2 transition-all duration-300 hover:shadow-sm
+                                                    group relative flex items-start gap-2.5 rounded-lg border px-2.5 py-2 transition-all duration-300 hover:shadow-sm
                                                     ${
                                                         event.completed
                                                             ? "border-[#FECACA]/50 bg-[#FEF2F2]/50 opacity-60"
@@ -1733,7 +1878,7 @@ export default function Calendar() {
                                                         )
                                                     }
                                                     className={`
-                                                        shrink-0 transition-all duration-300
+                                                        mt-0.5 shrink-0 transition-all duration-300
                                                         ${
                                                             event.completed
                                                                 ? "scale-110 text-[#22C55E]"
@@ -1754,7 +1899,7 @@ export default function Calendar() {
                                                 </button>
 
                                                 <div className="min-w-0 flex-1">
-                                                    <div className="flex items-center gap-2">
+                                                    <div className="flex items-baseline gap-2">
                                                         <span
                                                             className="shrink-0 text-[10px] font-bold tabular-nums"
                                                             style={{
@@ -1767,7 +1912,7 @@ export default function Calendar() {
                                                         </span>
 
                                                         <p
-                                                            className={`truncate text-xs font-semibold ${
+                                                            className={`break-words whitespace-normal text-xs font-semibold leading-relaxed ${
                                                                 event.completed
                                                                     ? "text-muted-foreground line-through"
                                                                     : ""
@@ -1784,7 +1929,7 @@ export default function Calendar() {
                                                         </p>
                                                     </div>
 
-                                                    <div className="mt-0.5 flex items-center gap-1.5">
+                                                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
                                                         <span
                                                             className="rounded border border-border/50 bg-background px-1.5 py-0.5 text-[9px] font-medium"
                                                             style={{
@@ -1813,7 +1958,7 @@ export default function Calendar() {
                                                             event.id
                                                         )
                                                     }
-                                                    className="rounded p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:bg-[#FEF2F2] hover:text-[#EF4444]"
+                                                    className="mt-0.5 shrink-0 rounded p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:bg-[#FEF2F2] hover:text-[#EF4444]"
                                                     aria-label={t("calendar.deleteEvent", "Delete event")}
                                                 >
                                                     <Trash2
