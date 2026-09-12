@@ -7,7 +7,7 @@ export const metadata = {
 
 export default function DocumentPage() {
     return (
-        <div className="h-screen p-6 bg-background">
+        <div className="h-screen bg-background">
             <Documents />
         </div>
     );

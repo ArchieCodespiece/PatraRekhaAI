@@ -47,7 +47,7 @@ const links = (t) => [
     },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ collapsed, onToggle }) {
     const pathname = usePathname();
     const router = useRouter();
     const { t, isRTL } = useI18n();
@@ -98,104 +98,144 @@ export default function Sidebar() {
 
     const sidebarContent = (
         <>
-            <div className="space-y-6">
-                <Link href="/dashboard" className="group flex items-center gap-3 rounded-2xl px-2 py-2 transition-colors hover:bg-white/5">
-                    <motion.div
-                        whileHover={{ rotate: -3, scale: 1.03 }}
-                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-sidebar-border bg-background p-1 shadow-md shadow-black/10"
+            {/* Header: Logo/Branding + Hamburger */}
+            <div className={`${collapsed ? 'flex flex-col items-center' : ''}`}>
+                {collapsed ? (
+                    /* Collapsed: Just hamburger */
+                    <button
+                        type="button"
+                        onClick={onToggle}
+                        className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-white/10 text-sidebar-foreground/70 transition-colors"
+                        aria-label="Toggle sidebar"
+                        title="Expand sidebar"
                     >
-                        <Image src="/patrerekhaai-logo.png" alt="PatraRekhaAI" width={40} height={40} className="h-10 w-10 object-contain" />
-                    </motion.div>
-                    <div className="min-w-0">
-                        <h1 className="text-base font-bold tracking-wide leading-tight text-sidebar-foreground">
-                            Patra<span className="text-primary">RekhaAI</span>
-                        </h1>
-                        <p className="truncate text-[10px] font-medium text-sidebar-foreground/70">{t("sidebar.documentIntelligence")}</p>
+                        <Menu size={20} />
+                    </button>
+                ) : (
+                    /* Expanded: Logo/Branding + Hamburger */
+                    <div className="flex items-center justify-between">
+                        <Link href="/dashboard" className="group flex items-center gap-3 rounded-2xl px-2 py-2 transition-colors hover:bg-white/5">
+                            <motion.div
+                                whileHover={{ rotate: -3, scale: 1.03 }}
+                                className="flex h-11 w-11 items-center justify-center rounded-xl border border-sidebar-border bg-background p-1 shadow-md shadow-black/10"
+                            >
+                                <Image src="/patrerekhaai-logo.png" alt="PatraRekhaAI" width={40} height={40} className="h-10 w-10 object-contain" />
+                            </motion.div>
+                            <div className="min-w-0">
+                                <h1 className="text-base font-bold tracking-wide leading-tight text-sidebar-foreground">
+                                    Patra<span className="text-primary">RekhaAI</span>
+                                </h1>
+                                <p className="truncate text-[10px] font-medium text-sidebar-foreground/70">{t("sidebar.documentIntelligence")}</p>
+                            </div>
+                        </Link>
+                        <button
+                            type="button"
+                            onClick={onToggle}
+                            className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-white/10 text-sidebar-foreground/70 transition-colors"
+                            aria-label="Toggle sidebar"
+                            title="Collapse sidebar"
+                        >
+                            <Menu size={20} />
+                        </button>
                     </div>
-                </Link>
+                )}
 
-                <LanguageSelector />
+                {!collapsed && <LanguageSelector />}
 
-                <div className="h-px bg-gradient-to-r from-sidebar-border via-sidebar-border/40 to-transparent" />
-
-                <nav className="space-y-1.5">
-                    <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/60">{t("sidebar.workspace")}</p>
-                    {navLinks.map((item) => {
-                        const Icon = item.icon;
-                        const active = pathname === item.href;
-                        return (
-                            <Link key={item.href} href={item.href} className="group relative block rounded-xl">
-                                {active && (
-                                    <motion.div
-                                        layoutId="sidebar-active"
-                                        className="absolute inset-0 rounded-xl bg-sidebar-primary shadow-lg shadow-sidebar-primary/25"
-                                        transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                                    />
-                                )}
-                                <div className={`relative flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors duration-200 ${active ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-white/5 hover:text-sidebar-foreground"}`}>
-                                    <div className="flex items-center gap-3">
-                                        <motion.div animate={{ scale: active ? 1.03 : 1 }} transition={{ duration: 0.15 }}>
-                                            <Icon size={18} />
-                                        </motion.div>
-                                        <span>{item.title}</span>
-                                    </div>
-                                    <ChevronRight size={14} className="opacity-0 -translate-x-1 text-sidebar-foreground/60 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100" />
-                                </div>
-                            </Link>
-                        );
-                    })}
-                </nav>
+                {!collapsed && <div className="h-px bg-gradient-to-r from-sidebar-border via-sidebar-border/40 to-transparent mt-4" />}
             </div>
 
+            {/* Navigation */}
+            <nav className="space-y-1.5">
+                {!collapsed && <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/60">{t("sidebar.workspace")}</p>}
+                {navLinks.map((item) => {
+                    const Icon = item.icon;
+                    const active = pathname === item.href;
+                    return (
+                        <Link key={item.href} href={item.href} className="group relative block rounded-xl">
+                            {active && (
+                                <motion.div
+                                    layoutId="sidebar-active"
+                                    className="absolute inset-0 rounded-xl bg-sidebar-primary shadow-lg shadow-sidebar-primary/25"
+                                    transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                                />
+                            )}
+                            <div className={`relative flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors duration-200 ${collapsed ? 'justify-center' : ''} ${active ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-white/5 hover:text-sidebar-foreground"}`}>
+                                <div className="flex items-center gap-3">
+                                    <motion.div animate={{ scale: active ? 1.03 : 1 }} transition={{ duration: 0.15 }}>
+                                        <Icon size={18} />
+                                    </motion.div>
+                                    {!collapsed && <span>{item.title}</span>}
+                                </div>
+                                {!collapsed && (
+                                    <ChevronRight size={14} className="opacity-0 -translate-x-1 text-sidebar-foreground/60 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100" />
+                                )}
+                            </div>
+                        </Link>
+                    );
+                })}
+            </nav>
+
+            {/* User Profile Section */}
             <div className="border-t border-sidebar-border pt-4">
-                <div className="flex items-center gap-3 rounded-2xl border border-sidebar-border bg-white/[0.035] p-2.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sidebar-primary/20 text-xs font-bold text-sidebar-foreground">
-                        {user?.displayName?.slice(0, 2)?.toUpperCase() || "GU"}
+                {collapsed ? (
+                    /* Collapsed: Only avatar */
+                    <div className="flex justify-center">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sidebar-primary/20 text-xs font-bold text-sidebar-foreground">
+                            {user?.displayName?.slice(0, 2)?.toUpperCase() || "GU"}
+                        </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-semibold text-sidebar-foreground">{user?.displayName || t("sidebar.guest")}</p>
-                        <p className="truncate text-[10px] text-sidebar-foreground/65">{user?.email || t("sidebar.signIn")}</p>
+                ) : (
+                    /* Expanded: Full profile with logout */
+                    <div className="flex items-center gap-3 rounded-2xl border border-sidebar-border bg-white/[0.035] p-2.5">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sidebar-primary/20 text-xs font-bold text-sidebar-foreground">
+                            {user?.displayName?.slice(0, 2)?.toUpperCase() || "GU"}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <p className="truncate text-xs font-semibold text-sidebar-foreground">{user?.displayName || t("sidebar.guest")}</p>
+                            <p className="truncate text-[10px] text-sidebar-foreground/65">{user?.email || t("sidebar.signIn")}</p>
+                        </div>
+                        <motion.button
+                            type="button"
+                            title={t("sidebar.logout")}
+                            whileHover={isLoggingOut ? {} : { scale: 1.05 }}
+                            whileTap={isLoggingOut ? {} : { scale: 0.95 }}
+                            onClick={async () => {
+                                if (isLoggingOut) return;
+                                setIsLoggingOut(true);
+                                try {
+                                    await signOut();
+                                } catch (err) {
+                                    console.error("Logout failed:", err);
+                                } finally {
+                                    router.push("/");
+                                    setIsLoggingOut(false);
+                                }
+                            }}
+                            disabled={isLoggingOut}
+                            className="rounded-lg p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-white/10 hover:text-sidebar-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isLoggingOut ? (
+                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                </svg>
+                            ) : (
+                                <LogOut size={16} />
+                            )}
+                        </motion.button>
+                        <motion.button
+                            type="button"
+                            title={darkMode ? "Light mode" : "Dark mode"}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={toggleDarkMode}
+                            className="rounded-lg p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-white/10 hover:text-sidebar-foreground"
+                        >
+                            {darkMode ? <Sun size={16} /> : <Moon size={16} />}
+                        </motion.button>
                     </div>
-                    <motion.button
-                        type="button"
-                        title={t("sidebar.logout")}
-                        whileHover={isLoggingOut ? {} : { scale: 1.05 }}
-                        whileTap={isLoggingOut ? {} : { scale: 0.95 }}
-                        onClick={async () => {
-                            if (isLoggingOut) return;
-                            setIsLoggingOut(true);
-                            try {
-                                await signOut();
-                            } catch (err) {
-                                console.error("Logout failed:", err);
-                            } finally {
-                                router.push("/");
-                                setIsLoggingOut(false);
-                            }
-                        }}
-                        disabled={isLoggingOut}
-                        className="rounded-lg p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-white/10 hover:text-sidebar-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {isLoggingOut ? (
-                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                            </svg>
-                        ) : (
-                            <LogOut size={16} />
-                        )}
-                    </motion.button>
-                    <motion.button
-                        type="button"
-                        title={darkMode ? "Light mode" : "Dark mode"}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={toggleDarkMode}
-                        className="rounded-lg p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-white/10 hover:text-sidebar-foreground"
-                    >
-                        {darkMode ? <Sun size={16} /> : <Moon size={16} />}
-                    </motion.button>
-                </div>
+                )}
             </div>
         </>
     );
@@ -213,7 +253,7 @@ export default function Sidebar() {
             </button>
 
             {/* Desktop sidebar */}
-            <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col justify-between border-r border-sidebar-border bg-sidebar p-4 text-sidebar-foreground select-none lg:flex">
+            <aside className={`sticky top-0 hidden h-screen shrink-0 flex-col justify-between border-r border-sidebar-border bg-sidebar p-4 text-sidebar-foreground select-none lg:flex transition-all duration-300 ${collapsed ? 'w-[68px]' : 'w-64'}`}>
                 {sidebarContent}
             </aside>
 

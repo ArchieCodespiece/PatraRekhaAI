@@ -1287,7 +1287,7 @@ export default function ChatWithPDF() {
 
     return (
 
-        <div className="flex h-full w-full overflow-hidden bg-background rounded-2xl border border-border/40 shadow-xl shadow-foreground/8">
+        <div className="flex h-full w-full overflow-hidden bg-background border border-border/40">
 
 
             {/* ============================================================

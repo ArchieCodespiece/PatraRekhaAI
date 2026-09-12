@@ -260,8 +260,8 @@ export default function DashboardHome() {
     /* ---- Render ---- */
 
     return (
-        <div className="min-h-screen bg-background text-foreground">
-            <div className="mx-auto w-full max-w-5xl p-5 md:p-8 lg:p-10">
+        <div className="h-full bg-background text-foreground">
+            <div className="w-full p-5 md:p-8 lg:p-10">
 
                 {/* Header */}
                 <div className="mb-8">
