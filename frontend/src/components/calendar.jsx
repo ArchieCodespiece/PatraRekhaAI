@@ -1286,7 +1286,7 @@ export default function Calendar() {
             }}
         >
             {/* Stats */}
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
             {[
                 {
                     label: t("calendar.todayEvents"),
@@ -1351,7 +1351,7 @@ export default function Calendar() {
             </div>
 
             {/* Main layout */}
-            <div className="grid min-h-0 flex-1 grid-cols-[340px_1fr_280px] gap-3">
+            <div className="flex flex-col lg:grid lg:grid-cols-[320px_1fr_280px] xl:grid-cols-[340px_1fr_280px] min-h-0 flex-1 gap-3 overflow-y-auto lg:overflow-visible">
                 {/* ------------------------------------------------------------------ */}
                 {/* Left column                                                        */}
                 {/* ------------------------------------------------------------------ */}

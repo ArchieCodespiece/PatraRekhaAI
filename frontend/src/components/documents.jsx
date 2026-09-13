@@ -523,6 +523,9 @@ export default function Documents() {
     const [intakeByFile, setIntakeByFile] = useState({});
     const [intakeBusyFile, setIntakeBusyFile] = useState(null);
 
+    // Track locally blocked file IDs so polling never re-introduces them
+    const [blockedFileIds, setBlockedFileIds] = useState(new Set());
+
     const [batchSelected, setBatchSelected] = useState(new Set());
     const [isBatchDeleting, setIsBatchDeleting] = useState(false);
 
@@ -542,7 +545,10 @@ export default function Documents() {
                     const pendingOptimistic = prevDocs.filter(
                         (d) => d.file_id?.startsWith?.("temp-") && !nextDocuments.some((nd) => nd.filename === d.filename)
                     );
-                    return deduplicateDocuments([...pendingOptimistic, ...nextDocuments]);
+                    // Filter out any files that were locally blocked — prevents
+                    // polling from re-introducing them before server deletion completes.
+                    const filtered = nextDocuments.filter((d) => !blockedFileIds.has(d.file_id));
+                    return deduplicateDocuments([...pendingOptimistic, ...filtered]);
                 });
             } catch (fetchError) {
                 setError(
@@ -552,7 +558,7 @@ export default function Documents() {
             } finally {
                 setIsLoading(false);
             }
-        }, [t]);
+        }, [t, blockedFileIds]);
 
     const refreshEmails = useCallback(async () => {
         setEmailsError("");
@@ -683,7 +689,9 @@ export default function Documents() {
                             (d) => d.file_id?.startsWith?.("temp-") &&
                                    !nextDocuments.some((nd) => nd.filename === d.filename)
                         );
-                        return deduplicateDocuments([...pendingOptimistic, ...nextDocuments]);
+                        // Filter out locally blocked files before updating state
+                        const filtered = nextDocuments.filter((d) => !blockedFileIds.has(d.file_id));
+                        return deduplicateDocuments([...pendingOptimistic, ...filtered]);
                     });
                 }
             } catch {
@@ -1052,6 +1060,16 @@ export default function Documents() {
             if (!response.ok || !data.ok) {
                 throw new Error(data?.detail || t("intake.error.override"));
             }
+            if (decision === "BLOCK") {
+                // Permanently suppress this file_id from polling results
+                setBlockedFileIds((prev) => new Set([...prev, fileId]));
+                setDocuments((prev) => prev.filter((d) => d.file_id !== fileId));
+                setSemanticDocuments((prev) => prev.filter((d) => d.file_id !== fileId));
+                if (selectedDocument?.file_id === fileId) {
+                    setSelectedDocument(null);
+                    setPreviewUrl("");
+                }
+            }
             addToast(
                 decision === "ALLOW"
                     ? t(
@@ -1060,7 +1078,7 @@ export default function Documents() {
                       ).replace("{name}", cleanFilename(filename))
                     : t(
                           "intake.decisions.heldBlocked",
-                          "\"{name}\" held.",
+                          "\"{name}\" removed.",
                       ).replace("{name}", cleanFilename(filename)),
                 "success",
                 fileId,
@@ -1078,7 +1096,7 @@ export default function Documents() {
         } finally {
             setIntakeBusyFile(null);
         }
-    }, [documents, addToast, t, refreshIntakeDecisions, refreshDocuments]);
+    }, [documents, addToast, t, refreshIntakeDecisions, refreshDocuments, blockedFileIds, selectedDocument]);
 
     /* ---------------------------------------------------------------------- */
     /* Upload                                                                  */
@@ -2008,7 +2026,10 @@ export default function Documents() {
                                         const metaText = `${cleanFilename(document.filename)} · ${formatBytes(document.file_size)}${deadLinesCount > 0 ? ` · ${deadLinesCount} ${deadLinesCount > 1 ? t("docs.deadlineCountPlural", "{count} deadlines").replace("{count}", deadLinesCount) : t("docs.deadlineCount", "{count} deadline").replace("{count}", deadLinesCount)}` : ''}`;
                                         const isProc = isDocumentProcessing(document);
                                         const procStage = document.processingStage || "upload";
-                                        const docStatus = isProc ? "processing" : "processed";
+                                        const intake = intakeByFile[document.file_id];
+                                        const effectiveIntake = intake ? (intake.override_decision || intake.decision || "ALLOW") : "ALLOW";
+                                        const isHeld = effectiveIntake === "REVIEW" || effectiveIntake === "BLOCK";
+                                        const docStatus = isHeld ? "held" : (isProc ? "processing" : "processed");
 
                                         return (
                                             <motion.div
@@ -2322,16 +2343,18 @@ function DocumentRow({
                 />
 
                 {/* Inline Processing Pipeline or Collapsed Processed Status */}
-                {isShowingPipeline ? (
-                    <ProcessingPipeline
-                        active={processingStage}
-                        compact={true}
-                    />
-                ) : (
-                    <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-emerald-500/20 bg-emerald-500/10 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">✓</span>
-                        {t("docs.processedBadge")}
-                    </span>
+                {((intakeStatus?.override_decision || intakeStatus?.decision || "ALLOW") === "ALLOW") && (
+                    isShowingPipeline ? (
+                        <ProcessingPipeline
+                            active={processingStage}
+                            compact={true}
+                        />
+                    ) : (
+                        <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-emerald-500/20 bg-emerald-500/10 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">✓</span>
+                            {t("docs.processedBadge")}
+                        </span>
+                    )
                 )}
 
                 {deadlines.length >

@@ -722,7 +722,7 @@ def get_document_file_url(
 
 def delete_file_from_storage(
     filename,
-    user_id,
+    user_id=None,
     owner_email=None,
 ):
     """
@@ -732,16 +732,41 @@ def delete_file_from_storage(
 
         documents/<user_id>/<filename>
 
-    owner_email is accepted for API compatibility but is not used
-    for storage-path resolution. User isolation is based on user_id.
+    If user_id is not provided, it is resolved from the database via
+    owner_email. Storage isolation is always based on user_id.
     """
 
     bucket = get_bucket_name()
 
-    storage_path = get_storage_path(
-        filename,
-        user_id,
-    )
+    # Resolve user_id from DB when caller only has owner_email
+    if not user_id and owner_email:
+        try:
+            normalized_email = normalize_owner_email(owner_email)
+            result = (
+                supabase.table(FILES_TABLE)
+                .select("user_id")
+                .eq("filename", os.path.basename(filename))
+                .eq("owner_email", normalized_email)
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                user_id = result.data[0].get("user_id")
+        except Exception as lookup_exc:
+            print(f"Could not resolve user_id for storage deletion of '{filename}': {lookup_exc}")
+
+    if not user_id:
+        print(
+            f"Skipping storage deletion for '{filename}': "
+            "no user_id could be determined."
+        )
+        return []
+
+    try:
+        storage_path = get_storage_path(filename, user_id)
+    except (ValueError, TypeError) as exc:
+        print(f"Invalid storage path for '{filename}': {exc}")
+        return []
 
     try:
         return supabase.storage.from_(bucket).remove(
@@ -761,31 +786,21 @@ def delete_file_record(
     owner_email=None,
     user_id=None,
 ):
-    """Delete a file row from the files table."""
+    """Delete a file row from the files table.
 
-    owner_email = normalize_owner_email(owner_email)
+    Deletes solely by file_id (UUID primary key).
+    owner_email / user_id are accepted for API compatibility but are NOT
+    added as extra filters to avoid a no-op delete when the caller has
+    stale or mismatched identity values.
+    """
 
-    UUID(str(file_id))
+    UUID(str(file_id))  # Validate UUID format
 
     query = (
         supabase.table(FILES_TABLE)
         .delete()
         .eq("file_id", str(file_id))
     )
-
-    if user_id:
-
-        query = query.eq(
-            "user_id",
-            normalize_user_id(user_id),
-        )
-
-    elif owner_email:
-
-        query = query.eq(
-            "owner_email",
-            owner_email,
-        )
 
     response = query.execute()
 

@@ -858,6 +858,15 @@ def delete_document(
             f"Metadata cleanup failed: {exc}"
         )
 
+    try:
+        from db.supabase_client import supabase
+        supabase.table("intake_decisions").delete().eq("file_id", str(file_id)).execute()
+    except Exception as exc:
+        print(
+            "[delete-document] "
+            f"Intake decisions cleanup failed: {exc}"
+        )
+
     return {
         "ok": True,
         "file_id": file_id,

@@ -20,6 +20,8 @@ import {
     ChevronDown,
     Menu,
     X,
+    Sun,
+    Moon,
 } from "lucide-react";
 
 import {
@@ -159,6 +161,23 @@ function Navbar() {
     const [scrolled, setScrolled] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
 
+    const [darkMode, setDarkMode] = useState(() => {
+        if (typeof window === "undefined") return false;
+        return localStorage.getItem("patrerekha:theme") === "dark" ||
+            (!localStorage.getItem("patrerekha:theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    });
+
+    useEffect(() => {
+        if (darkMode) {
+            document.documentElement.classList.add("dark");
+        } else {
+            document.documentElement.classList.remove("dark");
+        }
+        localStorage.setItem("patrerekha:theme", darkMode ? "dark" : "light");
+    }, [darkMode]);
+
+    const toggleDarkMode = () => setDarkMode((prev) => !prev);
+
     useEffect(() => {
         const handler = () => setScrolled(window.scrollY > 20);
         window.addEventListener("scroll", handler, { passive: true });
@@ -178,7 +197,7 @@ function Navbar() {
             animate="visible"
             className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
                 scrolled
-                    ? "bg-[#FFFBF0]/90 backdrop-blur-md border-b border-[#CABDB2]/30 shadow-sm shadow-[#413632]/5"
+                    ? "bg-[#FFFBF0]/90 dark:bg-[#15100d]/90 backdrop-blur-md border-b border-[#CABDB2]/30 dark:border-[#3a2f29] shadow-sm shadow-[#413632]/5"
                     : "bg-transparent"
             }`}
         >
@@ -198,9 +217,9 @@ function Navbar() {
                             className="h-[18px] w-[18px] object-contain"
                         />
                     </div>
-                    <span className="font-bold text-[15px] tracking-tight text-[#413632]">
+                    <span className="font-bold text-[15px] tracking-tight text-[#413632] dark:text-[#efe4d8]">
                         Patra<span className="text-[#CA8A78]">Rekha</span>
-                        <span className="text-[#413632]/50 font-semibold text-xs ml-0.5">AI</span>
+                        <span className="text-[#413632]/50 dark:text-[#efe4d8]/50 font-semibold text-xs ml-0.5">AI</span>
                     </span>
                 </Link>
 
@@ -210,7 +229,7 @@ function Navbar() {
                         <a
                             key={link.label}
                             href={link.href}
-                            className="px-4 py-2 rounded-lg text-sm font-medium text-[#413632]/65 hover:text-[#413632] hover:bg-[#413632]/5 transition-all duration-150"
+                            className="px-4 py-2 rounded-lg text-sm font-medium text-[#413632]/65 dark:text-[#efe4d8]/70 hover:text-[#413632] dark:hover:text-[#efe4d8] hover:bg-[#413632]/5 dark:hover:bg-white/5 transition-all duration-150"
                         >
                             {link.label}
                         </a>
@@ -219,29 +238,49 @@ function Navbar() {
 
                 {/* Desktop CTA */}
                 <div className="hidden md:flex items-center gap-2 shrink-0">
+                    <button
+                        type="button"
+                        onClick={toggleDarkMode}
+                        className="p-2 rounded-lg text-[#413632] dark:text-[#efe4d8] hover:bg-[#413632]/10 dark:hover:bg-white/10 transition-colors"
+                        title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                        aria-label="Toggle Dark Mode"
+                    >
+                        {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+                    </button>
                     <Link
                         href="/auth"
-                        className="px-4 py-2 rounded-lg text-sm font-semibold text-[#413632] hover:bg-[#413632]/6 transition-all duration-150"
+                        className="px-4 py-2 rounded-lg text-sm font-semibold text-[#413632] dark:text-[#efe4d8] hover:bg-[#413632]/6 dark:hover:bg-white/10 transition-all duration-150"
                     >
                         Sign in
                     </Link>
                     <Link
                         href="/auth"
-                        className="group flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#413632] text-[#FFFBF0] text-sm font-semibold transition-all duration-200 hover:bg-[#413632]/85 hover:shadow-md hover:shadow-[#413632]/20 active:scale-95"
+                        className="group flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#413632] dark:bg-[#CA8A78] text-[#FFFBF0] dark:text-[#15100d] text-sm font-semibold transition-all duration-200 hover:bg-[#413632]/85 dark:hover:bg-[#CA8A78]/90 hover:shadow-md hover:shadow-[#413632]/20 active:scale-95"
                     >
                         Get Started
                         <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
                     </Link>
                 </div>
 
-                {/* Mobile menu toggle */}
-                <button
-                    className="md:hidden p-2 rounded-lg text-[#413632] hover:bg-[#413632]/6 transition-colors"
-                    onClick={() => setMenuOpen((o) => !o)}
-                    aria-label={menuOpen ? "Close menu" : "Open menu"}
-                >
-                    {menuOpen ? <X size={20} /> : <Menu size={20} />}
-                </button>
+                {/* Mobile dark mode & menu toggle */}
+                <div className="flex items-center gap-1 md:hidden">
+                    <button
+                        type="button"
+                        onClick={toggleDarkMode}
+                        className="p-2 rounded-lg text-[#413632] dark:text-[#efe4d8] hover:bg-[#413632]/10 dark:hover:bg-white/10 transition-colors"
+                        title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                        aria-label="Toggle Dark Mode"
+                    >
+                        {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+                    </button>
+                    <button
+                        className="p-2 rounded-lg text-[#413632] dark:text-[#efe4d8] hover:bg-[#413632]/6 transition-colors"
+                        onClick={() => setMenuOpen((o) => !o)}
+                        aria-label={menuOpen ? "Close menu" : "Open menu"}
+                    >
+                        {menuOpen ? <X size={20} /> : <Menu size={20} />}
+                    </button>
+                </div>
             </div>
 
             {/* Mobile menu */}
@@ -252,7 +291,7 @@ function Navbar() {
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
                         transition={{ duration: 0.22, ease: "easeOut" }}
-                        className="md:hidden overflow-hidden bg-[#FFFBF0]/95 backdrop-blur-md border-b border-[#CABDB2]/30"
+                        className="md:hidden overflow-hidden bg-[#FFFBF0]/95 dark:bg-[#15100d]/95 backdrop-blur-md border-b border-[#CABDB2]/30 dark:border-[#3a2f29]"
                     >
                         <div className="px-6 py-4 flex flex-col gap-1">
                             {navLinks.map((link) => (
@@ -260,7 +299,7 @@ function Navbar() {
                                     key={link.label}
                                     href={link.href}
                                     onClick={() => setMenuOpen(false)}
-                                    className="px-3 py-2.5 rounded-lg text-sm font-medium text-[#413632]/70 hover:text-[#413632] hover:bg-[#413632]/5 transition-all"
+                                    className="px-3 py-2.5 rounded-lg text-sm font-medium text-[#413632]/70 dark:text-[#efe4d8]/70 hover:text-[#413632] dark:hover:text-[#efe4d8] hover:bg-[#413632]/5 dark:hover:bg-white/5 transition-all"
                                 >
                                     {link.label}
                                 </a>

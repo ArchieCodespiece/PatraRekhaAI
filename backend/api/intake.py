@@ -333,61 +333,45 @@ def _strip_metadata_for_refresh(document: dict) -> None:
 
 
 def _clear_processed_state(document: dict) -> None:
-    """Revert a manually-BLOCKED document to its unprocessed state.
-
-    Clears the processing flags and metadata so a held/quarantined document
-    no longer appears as a fully processed document in the Documents
-    section, and cannot be returned by vector retrieval.  Any Pinecone
-    vectors are deleted best-effort.
-    """
+    """Completely delete a BLOCKED document from storage, DB records, metadata, and Pinecone vectors."""
 
     file_id = str(document.get("file_id") or "")
+    filename = str(document.get("filename") or "")
+    user_id = document.get("user_id")
+    owner_email = document.get("owner_email")
 
+    # 1. Delete Pinecone vectors
+    namespace = str(user_id or owner_email or "").strip()
+    if namespace:
+        try:
+            from vectorstore.pinecone_store import PineconeStore
+            store = PineconeStore(namespace=namespace)
+            clean_name = filename.replace(".pdf", "").replace(".PDF", "")
+            for candidate in {filename, clean_name, f"{file_id}-{filename}", f"{file_id}-{clean_name}"}:
+                store.delete_document(candidate, namespace=namespace)
+        except Exception as exc:
+            print(f"Intake gatekeeper: Pinecone cleanup for {file_id}: {exc}")
+
+    # 2. Delete file from storage bucket
     try:
-        from db.files import update_file_flags
-        update_file_flags(
-            file_id,
-            is_vectored=False,
-            is_summarized=False,
-        )
+        from db.files import delete_file_from_storage
+        delete_file_from_storage(filename, owner_email=owner_email, user_id=user_id)
     except Exception as exc:
-        print(f"Intake gatekeeper: could not clear flags for {file_id}: {exc}")
+        print(f"Intake gatekeeper: storage cleanup failed for {file_id}: {exc}")
 
+    # 3. Delete DB file record
+    try:
+        from db.files import delete_file_record
+        delete_file_record(file_id, owner_email=owner_email, user_id=user_id)
+    except Exception as exc:
+        print(f"Intake gatekeeper: file record deletion failed for {file_id}: {exc}")
+
+    # 4. Delete document metadata
     try:
         from db.document_metadata import delete_document_metadata
         delete_document_metadata(file_id)
     except Exception as exc:
-        print(f"Intake gatekeeper: could not delete metadata for {file_id}: {exc}")
-
-    namespace = (
-        str(document.get("user_id") or "").strip()
-        or str(document.get("owner_email") or "").strip()
-    )
-    if not namespace:
-        return
-
-    try:
-        from pathlib import Path
-        import importlib
-        import sys
-
-        project_root = Path(__file__).resolve().parents[2]
-        pipeline_dir = project_root / "AI pipeline"
-        if str(pipeline_dir) not in sys.path:
-            sys.path.insert(0, str(pipeline_dir))
-
-        pinecone_store = importlib.import_module(
-            "vectorstore.pinecone_store"
-        ).PineconeStore(namespace=namespace)
-        pinecone_store.delete_document(
-            file_id,
-            namespace=namespace,
-        )
-    except Exception as exc:
-        print(
-            f"Intake gatekeeper: Pinecone cleanup skipped for "
-            f"{file_id}: {exc}"
-        )
+        print(f"Intake gatekeeper: metadata deletion failed for {file_id}: {exc}")
 
 
 def _validate_rules(rules) -> None:

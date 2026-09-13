@@ -388,7 +388,7 @@ export default function ChatWithPDF() {
     const [
         isHistoryOpen,
         setIsHistoryOpen,
-    ] = useState(true);
+    ] = useState(false);
 
 
     /* --------------------------------------------------------------------
@@ -1336,8 +1336,18 @@ export default function ChatWithPDF() {
                RECENT CHATS
             ============================================================ */}
 
+            {/* Mobile backdrop for History */}
+            {isHistoryOpen && (
+                <div
+                    className="fixed inset-0 z-40 bg-black/50 backdrop-blur-xs md:hidden"
+                    onClick={() => setIsHistoryOpen(false)}
+                />
+            )}
+
             <div
                 className={`
+                    fixed md:relative
+                    inset-y-0 left-0 z-50 md:z-auto
                     shrink-0
                     border-r
                     border-border/50
@@ -1347,11 +1357,12 @@ export default function ChatWithPDF() {
                     transition-all
                     duration-300
                     overflow-hidden
+                    shadow-xl md:shadow-none
 
                     ${
                         isHistoryOpen
-                            ? "w-64"
-                            : "w-0"
+                            ? "w-72 md:w-64"
+                            : "w-0 border-r-0"
                     }
                 `}
             >
@@ -1383,13 +1394,11 @@ export default function ChatWithPDF() {
                                         false
                                     )
                                 }
-                                className="p-1.5 rounded-lg hover:bg-border/30 text-foreground/75 hover:text-foreground"
+                                className="p-1.5 rounded-lg hover:bg-border/30 text-foreground/75 hover:text-foreground transition"
+                                title="Minimize / Close sidebar"
+                                aria-label="Minimize recent chats"
                             >
-
-                                <ChevronLeft
-                                    size={15}
-                                />
-
+                                <X size={18} />
                             </button>
 
                         </div>
@@ -1398,9 +1407,12 @@ export default function ChatWithPDF() {
                         {/* New chat */}
 
                         <button
-                            onClick={
-                                handleNewChat
-                            }
+                            onClick={() => {
+                                handleNewChat();
+                                if (window.innerWidth < 768) {
+                                    setIsHistoryOpen(false);
+                                }
+                            }}
                             className="w-full mt-4 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-primary hover:bg-primary/85 text-primary-foreground text-xs font-semibold transition shadow-sm shadow-foreground/15"
                         >
 
@@ -1471,11 +1483,14 @@ export default function ChatWithPDF() {
                                                 key={
                                                     conversation.id
                                                 }
-                                                onClick={() =>
+                                                onClick={() => {
                                                     openConversation(
                                                         conversation.id
-                                                    )
-                                                }
+                                                    );
+                                                    if (window.innerWidth < 768) {
+                                                        setIsHistoryOpen(false);
+                                                    }
+                                                }}
                                                 className={`
                                                     w-full
                                                     group
@@ -1571,6 +1586,8 @@ export default function ChatWithPDF() {
 
                     </div>
 
+
+
                 </div>
 
             </div>
@@ -1599,7 +1616,8 @@ export default function ChatWithPDF() {
                                             true
                                         )
                                     }
-                                    className="p-2 rounded-lg bg-card/70 hover:bg-border/30 text-foreground/80"
+                                    title={t("chat.recentChats")}
+                                    className="p-2 rounded-lg bg-card/70 hover:bg-border/30 text-foreground/80 shrink-0"
                                 >
 
                                     <ChevronRight
@@ -1609,6 +1627,14 @@ export default function ChatWithPDF() {
                                 </button>
 
                             )}
+
+                            <a
+                                href="/document"
+                                title="Back to Documents"
+                                className="flex md:hidden items-center justify-center p-2 rounded-lg bg-card/70 hover:bg-border/30 text-foreground/80 shrink-0"
+                            >
+                                <ChevronLeft size={18} />
+                            </a>
 
 
                             <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary/12 border border-primary/20 text-primary shrink-0">
@@ -2409,7 +2435,7 @@ export default function ChatWithPDF() {
                                     ? "Think on: verify claims and re-check unsupported evidence"
                                     : "Think off: retrieve, compare, and export faster"
                             }
-                            className={`flex items-center justify-center gap-1.5 h-12 px-3 rounded-xl border text-xs font-medium transition shrink-0 ${
+                            className={`flex items-center justify-center gap-1.5 h-12 px-2.5 sm:px-3 rounded-xl border text-xs font-medium transition shrink-0 ${
                                 thinkMode
                                     ? "border-primary bg-primary/15 text-primary"
                                     : "border-border/60 bg-card/70 text-foreground/70 hover:text-foreground hover:border-primary/50"
@@ -2464,8 +2490,18 @@ export default function ChatWithPDF() {
                DOCUMENT PANEL
             ============================================================ */}
 
+            {/* Mobile backdrop for Documents panel */}
+            {isPanelOpen && (
+                <div
+                    className="fixed inset-0 z-40 bg-black/50 backdrop-blur-xs md:hidden"
+                    onClick={() => setIsPanelOpen(false)}
+                />
+            )}
+
             <div
                 className={`
+                    fixed md:relative
+                    inset-y-0 right-0 z-50 md:z-auto
                     shrink-0
                     border-l
                     border-border/50
@@ -2475,11 +2511,12 @@ export default function ChatWithPDF() {
                     transition-all
                     duration-300
                     overflow-hidden
+                    shadow-xl md:shadow-none
 
                     ${
                         isPanelOpen
-                            ? "w-72 xl:w-80"
-                            : "w-0"
+                            ? "w-80 md:w-72 xl:w-80"
+                            : "w-0 border-l-0"
                     }
                 `}
             >
@@ -2508,30 +2545,41 @@ export default function ChatWithPDF() {
                         </div>
 
 
-                        <button
-                            onClick={
-                                toggleAllPDFs
-                            }
-                            disabled={
-                                documents.length ===
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={
+                                    toggleAllPDFs
+                                }
+                                disabled={
+                                    documents.length ===
+                                    0
+                                }
+                                className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-card/70 hover:bg-border/30 text-foreground/80 transition disabled:opacity-40"
+                            >
+
+                                {selectedPDFs.size >
                                 0
-                            }
-                            className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-card/70 hover:bg-border/30 text-foreground/80 transition disabled:opacity-40"
-                        >
 
-                            {selectedPDFs.size >
-                            0
+                                    ? t("chat.deselectAll")
 
-                                ? t("chat.deselectAll")
+                                    : documents.length >
+                                      MAX_SELECTION
 
-                                : documents.length >
-                                  MAX_SELECTION
+                                    ? t("chat.selectN", "Select {count}").replace("{count}", MAX_SELECTION)
 
-                                ? t("chat.selectN", "Select {count}").replace("{count}", MAX_SELECTION)
+                                    : t("chat.selectAll")}
 
-                                : t("chat.selectAll")}
+                            </button>
 
-                        </button>
+                            <button
+                                onClick={() => setIsPanelOpen(false)}
+                                className="p-1.5 rounded-lg hover:bg-border/30 text-foreground/75 hover:text-foreground transition"
+                                title="Minimize / Close panel"
+                                aria-label="Minimize documents panel"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
 
                     </div>
 
@@ -2819,20 +2867,16 @@ export default function ChatWithPDF() {
                     </div>
 
 
-                    {/* Footer */}
+                    {/* Footer - Done Action Button to Hide/Minimize Tray */}
 
-                    <div className="px-4 py-3 border-t border-border/30 bg-card/40">
+                    <div className="px-4 py-3 border-t border-border/40 bg-card/70">
 
                         <button
-                            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-border/50 hover:border-primary/50 hover:bg-primary/6 text-foreground/75 hover:text-primary text-xs font-medium transition"
+                            type="button"
+                            onClick={() => setIsPanelOpen(false)}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold shadow-md shadow-primary/15 transition active:scale-[0.98]"
                         >
-
-                            <Upload
-                                size={14}
-                            />
-
-                            {t("docs.uploadNewPdf")}
-
+                            Done ({selectedCount} selected)
                         </button>
 
                     </div>

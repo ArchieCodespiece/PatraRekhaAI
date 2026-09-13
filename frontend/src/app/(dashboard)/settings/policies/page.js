@@ -13,6 +13,7 @@ import {
     CheckCircle2,
     Inbox,
     FileText,
+    ChevronLeft,
 } from "lucide-react";
 
 import {
@@ -251,7 +252,7 @@ export default function IntakePoliciesPage() {
 
     if (loading) {
         return (
-            <div className="mx-auto max-w-5xl space-y-6 p-6">
+            <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
                 <div className="flex items-center gap-3">
                     <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
@@ -267,14 +268,21 @@ export default function IntakePoliciesPage() {
             {/* Header */}
             <header className="space-y-1">
                 <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-card shadow-sm">
+                    <a
+                        href="/document"
+                        className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card shadow-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        title="Back to Documents"
+                    >
+                        <ChevronLeft className="h-5 w-5" />
+                    </a>
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-card shadow-sm shrink-0">
                         <ShieldCheck className="h-5 w-5 text-primary" />
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold tracking-tight">
+                    <div className="min-w-0">
+                        <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">
                             {t("intake.title")}
                         </h1>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-xs sm:text-sm text-muted-foreground truncate">
                             {t("intake.subtitle")}
                         </p>
                     </div>
@@ -283,7 +291,7 @@ export default function IntakePoliciesPage() {
 
             {/* Status banner */}
             <div
-                className={`flex items-center justify-between gap-3 rounded-xl border p-4 ${
+                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border p-4 ${
                     enabled
                         ? "border-emerald-500/30 bg-emerald-500/5"
                         : "border-border bg-card"
@@ -431,7 +439,7 @@ export default function IntakePoliciesPage() {
                 </div>
 
                 {/* Document type matrix */}
-                <div className="overflow-hidden rounded-xl border border-border">
+                <div className="overflow-x-auto rounded-xl border border-border">
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-b border-border bg-muted/50 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
