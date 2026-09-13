@@ -133,6 +133,7 @@ from api.chat import router as chat_router
 from api.calendar import router as calendar_router
 from api.gmail import router as gmail_router
 from api.deadlines import router as deadlines_router
+from api.intake import router as intake_router
 
 app.include_router(health_router)
 app.include_router(conversations_router)
@@ -141,3 +142,4 @@ app.include_router(chat_router)
 app.include_router(calendar_router)
 app.include_router(gmail_router)
 app.include_router(deadlines_router)
+app.include_router(intake_router)

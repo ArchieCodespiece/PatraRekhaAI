@@ -123,6 +123,39 @@ async def process_document(document):
         file_id,
     )
 
+    # ------------------------------------------------------------------
+    # Intake gatekeeper: policy-driven ALLOW / REVIEW / BLOCK.
+    #
+    # This is the single intake gatekeeper choke point for every document
+    # source (Gmail poller, manual upload, Supabase trigger webhook, ...).
+    #
+    # REVIEW/BLOCK documents are HELD (not chunked/embedded/upserted into
+    # RAG) but are never deleted — the file and its row are retained and an
+    # audit record is written.  The decision is fail-open: any gatekeeper
+    # error results in ALLOW so the current ingestion flow never changes.
+    # ------------------------------------------------------------------
+
+    from gatekeeper.service import evaluate_intake
+
+    intake_result = await asyncio.to_thread(
+        evaluate_intake,
+        document_record,
+        content,
+    )
+
+    if intake_result.get("decision") != "ALLOW":
+
+        logger.warning(
+            "Intake gatekeeper decision=%s for document %s "
+            "(category=%s reason=%s)",
+            intake_result.get("decision"),
+            file_id,
+            intake_result.get("category"),
+            intake_result.get("reason"),
+        )
+
+        return
+
     # ----------------------------------------------------------
     # Run AI pipeline
     # ----------------------------------------------------------
@@ -480,10 +513,7 @@ def write_temp_pdf(
 
     original_path.write_bytes(content)
 
-    if (
-        not is_supported_document(original_path)
-        or original_path.suffix.lower() != ".pdf"
-    ):
+    if is_supported_document(original_path) and original_path.suffix.lower() != ".pdf":
         pdf_path = (
             TEMP_PDF_DIR
             / f"{document['file_id']}-{original_path.stem}.pdf"

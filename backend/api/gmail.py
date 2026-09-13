@@ -281,7 +281,7 @@ def gmail_connect_status(
         )
 
         active = bool(
-            connection.get("active", False)
+            connection.get("is_active", False)
         )
 
         return {
@@ -456,3 +456,75 @@ def gmail_disconnect_all(
     return {
         "ok": True,
     }
+
+
+# ============================================================================
+# GMAIL EMAIL RECORDS — LIST
+# ============================================================================
+
+@router.get("/gmail/emails")
+def list_gmail_emails(
+    owner_email: str | None = None,
+    identity=Depends(get_authenticated_identity),
+):
+    """
+    Return email records (plain emails without document attachments)
+    belonging to the authenticated user, newest first.
+    """
+    from db.email_records import list_email_records
+
+    user_id, authenticated_email = identity
+
+    effective_email = verify_requested_email(
+        owner_email,
+        authenticated_email,
+    )
+
+    emails = list_email_records(
+        user_id=user_id,
+        owner_email=effective_email,
+    )
+
+    return {"emails": emails}
+
+
+# ============================================================================
+# GMAIL EMAIL RECORDS — DELETE
+# ============================================================================
+
+@router.delete("/gmail/emails/{email_id}")
+def delete_gmail_email(
+    email_id: str,
+    identity=Depends(get_authenticated_identity),
+):
+    """
+    Delete a single email record owned by the authenticated user.
+    """
+    from db.email_records import (
+        delete_email_record,
+        get_email_record,
+    )
+
+    user_id, authenticated_email = identity
+
+    record = get_email_record(
+        email_id,
+        user_id=user_id,
+    )
+
+    if not record:
+        raise HTTPException(
+            status_code=404,
+            detail="Email record not found.",
+        )
+
+    delete_email_record(
+        email_id,
+        user_id=user_id,
+    )
+
+    return {
+        "ok": True,
+        "email_id": email_id,
+    }
+

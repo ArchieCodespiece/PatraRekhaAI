@@ -84,6 +84,9 @@ if str(BACKEND_DIR) not in sys.path:
 if str(SUMMARIZATION_PIPELINE_DIR) not in sys.path:
     sys.path.insert(0, str(SUMMARIZATION_PIPELINE_DIR))
 
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 
 # ============================================================================
 # Environment
@@ -555,6 +558,39 @@ def process_metadata_for_attachment(
     if not file_id:
         return
 
+    # ------------------------------------------------------------------
+    # Intake gatekeeper (fail-open ALLOW)
+    #
+    # The store_file -> Supabase trigger -> webhook path gates the RAG
+    # pipeline, but it fires asynchronously AFTER this metadata step.
+    # Without a gate here, REVIEW/BLOCK documents still get a summary and
+    # appear fully processed in the Documents section.  Apply the same
+    # policy before generating any metadata so held documents stay bare.
+    # ------------------------------------------------------------------
+
+    try:
+        from gatekeeper.service import evaluate_intake
+
+        intake = evaluate_intake(
+            file_record,
+            content,
+        )
+
+        if intake.get("decision") != "ALLOW":
+            print(
+                "Intake gatekeeper "
+                f"decision={intake.get('decision')} "
+                f"category={intake.get('category')} "
+                f"for {filename}; "
+                "skipping metadata/summarization."
+            )
+            return
+    except Exception as _intake_error:
+        print(
+            f"Intake gatekeeper metadata gate skipped "
+            f"for {filename}: {_intake_error}"
+        )
+
     from document_preprocessing.converter import convert_to_pdf
 
     with tempfile.TemporaryDirectory(
@@ -883,35 +919,42 @@ def store_message(
             }
 
     # ------------------------------------------------------------------
-    # 7. Email body fallback if no attachments
+    # 7. Emails without attachments → email_records, NOT documents
+    #
+    # Plain emails must never be chunked, embedded, or stored as
+    # documents.  Instead we save them to the email_records table so
+    # the frontend can display them in the dedicated Emails section.
     # ------------------------------------------------------------------
 
     if not document_attachments:
 
-        if len(email_body_cleaned) >= 50:
-            email_subj = subject or "Notice"
-            email_date_str = str(message.get("Date") or "").strip()
-            email_body_doc = (
-                f"Subject: {email_subj}\n"
-                f"From: {sender}\n"
-                f"Date: {email_date_str}\n\n"
-                f"{email_body_cleaned}"
-            ).encode("utf-8")
-            safe_sub = safe_filename(email_subj, "Email")[:30]
-            document_attachments.append(
-                (
-                    None,
-                    f"Email - {safe_sub}.txt",
-                    "text/plain",
-                    email_body_doc,
-                )
-            )
+        email_date_str = str(
+            message.get("Date") or ""
+        ).strip() or None
 
-    # If still no documents, record skipped
-    if not document_attachments:
-        _mark_cached(
-            gmail_msg_id
-        )
+        if subject or email_body_cleaned.strip():
+            try:
+                from db.email_records import insert_email_record
+
+                insert_email_record(
+                    gmail_message_id=gmail_msg_id,
+                    user_id=user_id,
+                    owner_email=owner_email,
+                    subject=subject or None,
+                    sender=sender or None,
+                    thread_id=thread_id or None,
+                    received_at=email_date_str,
+                    body_text=email_body_cleaned or None,
+                    email_intent=email_intent or None,
+                )
+
+            except Exception as _email_rec_err:
+                print(
+                    f"Warning: could not store email record "
+                    f"for {gmail_msg_id}: {_email_rec_err}"
+                )
+
+        _mark_cached(gmail_msg_id)
 
         try:
             mark_message_processed(
@@ -926,6 +969,7 @@ def store_message(
         return {
             "skipped": True,
             "no_documents": True,
+            "stored_as_email": True,
         }
 
     # ------------------------------------------------------------------

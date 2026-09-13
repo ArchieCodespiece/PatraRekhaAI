@@ -11,6 +11,7 @@ import {
     FileText,
     MessageSquareText,
     CalendarDays,
+    ShieldCheck,
     LogOut,
     ChevronRight,
     Menu,
@@ -44,6 +45,11 @@ const links = (t) => [
         title: t("sidebar.calendar"),
         href: "/calendar",
         icon: CalendarDays,
+    },
+    {
+        title: t("sidebar.intakePolicies"),
+        href: "/settings/policies",
+        icon: ShieldCheck,
     },
 ];
 

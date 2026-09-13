@@ -11,15 +11,19 @@ import {
 import {
     AlertTriangle,
     AlertCircle,
+    Ban,
     CheckCircle2,
     CalendarClock,
     Eye,
     FileText,
     Grid3X3,
+    Inbox,
     List,
     Loader2,
+    Mail,
     RefreshCw,
     Search,
+    ShieldCheck,
     Trash2,
     Upload,
     X,
@@ -39,6 +43,8 @@ import {
     CardSkeleton,
 } from "./ui";
 import { HelpTooltip } from "./ui/help-tooltip";
+import EmailList from "./EmailList";
+import EmailDetailPanel from "./EmailDetailPanel";
 import { useI18n } from "../lib/i18n/I18nContext";
 
 /* -------------------------------------------------------------------------- */
@@ -194,6 +200,28 @@ async function deleteDocumentOnServer(fileId) {
         );
     }
 
+    return data;
+}
+
+async function fetchEmailList() {
+    const response = await authenticatedFetch("/gmail/emails");
+    const data = await parseResponse(response);
+    if (!response.ok) {
+        throw new Error(data?.detail || "Unable to load emails.");
+    }
+    return Array.isArray(data?.emails) ? data.emails : [];
+}
+
+async function deleteEmailOnServer(emailId) {
+    if (!emailId) throw new Error("Missing email ID.");
+    const response = await authenticatedFetch(
+        `/gmail/emails/${encodeURIComponent(emailId)}`,
+        { method: "DELETE" }
+    );
+    const data = await parseResponse(response);
+    if (!response.ok) {
+        throw new Error(data?.detail || "Unable to delete email.");
+    }
     return data;
 }
 
@@ -396,6 +424,15 @@ export default function Documents() {
     const { t } = useI18n();
     const [documents, setDocuments] = useState([]);
 
+    // ── Tab state ──────────────────────────────────────────────────────────
+    const [activeTab, setActiveTab] = useState("documents"); // "documents" | "emails"
+
+    // ── Email records state ────────────────────────────────────────────────
+    const [emails, setEmails] = useState([]);
+    const [isEmailsLoading, setIsEmailsLoading] = useState(false);
+    const [emailsError, setEmailsError] = useState("");
+    const [selectedEmail, setSelectedEmail] = useState(null);
+
     const [selectedDocument, setSelectedDocument] =
         useState(null);
 
@@ -483,6 +520,9 @@ export default function Documents() {
     const [docPage, setDocPage] = useState(1);
     const DOCS_PER_PAGE = 12;
 
+    const [intakeByFile, setIntakeByFile] = useState({});
+    const [intakeBusyFile, setIntakeBusyFile] = useState(null);
+
     const [batchSelected, setBatchSelected] = useState(new Set());
     const [isBatchDeleting, setIsBatchDeleting] = useState(false);
 
@@ -513,6 +553,60 @@ export default function Documents() {
                 setIsLoading(false);
             }
         }, [t]);
+
+    const refreshEmails = useCallback(async () => {
+        setEmailsError("");
+        setIsEmailsLoading(true);
+        try {
+            const list = await fetchEmailList();
+            setEmails(list);
+        } catch (err) {
+            setEmailsError(err?.message || "Unable to load emails.");
+        } finally {
+            setIsEmailsLoading(false);
+        }
+    }, []);
+
+    const refreshIntakeDecisions = useCallback(async () => {
+        try {
+            const response = await authenticatedFetch(
+                "/intake/decisions?limit=200"
+            );
+            const data = await parseResponse(response);
+            const rows = Array.isArray(data?.decisions)
+                ? data.decisions
+                : [];
+            const next = {};
+            for (const row of rows) {
+                if (row?.file_id) next[row.file_id] = row;
+            }
+            setIntakeByFile(next);
+        } catch {
+            /* silent background error */
+        }
+    }, []);
+
+    // Load emails when tab is first switched to emails
+    useEffect(() => {
+        if (activeTab === "emails" && emails.length === 0 && !isEmailsLoading) {
+            refreshEmails();
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab]);
+
+    const handleDeleteEmail = useCallback(async (email) => {
+        const emailId = email?.email_id;
+        if (!emailId) return;
+        // Optimistic remove
+        setEmails((prev) => prev.filter((e) => e.email_id !== emailId));
+        if (selectedEmail?.email_id === emailId) setSelectedEmail(null);
+        try {
+            await deleteEmailOnServer(emailId);
+        } catch {
+            // Restore on failure
+            setEmails((prev) => [email, ...prev]);
+        }
+    }, [selectedEmail]);
 
     /* ---------------------------------------------------------------------- */
     /* Keyboard shortcuts                                                      */
@@ -563,8 +657,10 @@ export default function Documents() {
                 if (isMounted) setIsLoading(false);
             });
 
+        refreshIntakeDecisions();
+
         return () => { isMounted = false; };
-    }, [authUser?.id]);
+    }, [authUser?.id, refreshIntakeDecisions]);
 
     // --- Adaptive polling interval: 2.5s while processing, 12s otherwise ---
     useEffect(() => {
@@ -597,10 +693,15 @@ export default function Documents() {
             }
         };
 
-        const handleFocus = () => { silentRefresh(); };
+        const handleFocus = () => { silentRefresh(); }; 
+
+        const refreshTick = () => {
+            silentRefresh();
+            refreshIntakeDecisions();
+        };
 
         const pollInterval = hasProcessingDocuments ? 2500 : 12000;
-        const intervalId = window.setInterval(silentRefresh, pollInterval);
+        const intervalId = window.setInterval(refreshTick, pollInterval);
         window.addEventListener("focus", handleFocus);
 
         return () => {
@@ -608,7 +709,7 @@ export default function Documents() {
             window.clearInterval(intervalId);
             window.removeEventListener("focus", handleFocus);
         };
-    }, [authUser?.id, hasProcessingDocuments]);
+    }, [authUser?.id, hasProcessingDocuments, refreshIntakeDecisions]);
 
     /* ---------------------------------------------------------------------- */
     /* Filter documents                                                       */
@@ -930,6 +1031,55 @@ export default function Documents() {
         }
     }, [addToast, refreshDocuments]);
 
+    const handleIntakeOverride = useCallback(async (fileId, decision) => {
+        if (!fileId) return;
+
+        setIntakeBusyFile(fileId);
+        const filename =
+            documents.find((d) => d.file_id === fileId)?.filename ||
+            "document";
+
+        try {
+            const response = await authenticatedFetch(
+                `/intake/decisions/${encodeURIComponent(fileId)}/override`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ decision }),
+                }
+            );
+            const data = await parseResponse(response);
+            if (!response.ok || !data.ok) {
+                throw new Error(data?.detail || t("intake.error.override"));
+            }
+            addToast(
+                decision === "ALLOW"
+                    ? t(
+                          "intake.decisions.releaseQueued",
+                          "\"{name}\" queued for processing.",
+                      ).replace("{name}", cleanFilename(filename))
+                    : t(
+                          "intake.decisions.heldBlocked",
+                          "\"{name}\" held.",
+                      ).replace("{name}", cleanFilename(filename)),
+                "success",
+                fileId,
+                filename
+            );
+            await refreshIntakeDecisions();
+            await refreshDocuments();
+        } catch (err) {
+            addToast(
+                err?.message || t("intake.error.override"),
+                "error",
+                fileId,
+                filename
+            );
+        } finally {
+            setIntakeBusyFile(null);
+        }
+    }, [documents, addToast, t, refreshIntakeDecisions, refreshDocuments]);
+
     /* ---------------------------------------------------------------------- */
     /* Upload                                                                  */
     /* ---------------------------------------------------------------------- */
@@ -1235,22 +1385,65 @@ export default function Documents() {
                 {/* Header */}
 
                 <header className="flex flex-col gap-4 border-b border-border bg-card/70 px-6 py-5">
+                    {/* Tab switcher */}
+                    <div className="flex items-center gap-1 self-start rounded-xl border border-border bg-background p-1">
+                        <button
+                            type="button"
+                            id="tab-documents"
+                            onClick={() => setActiveTab("documents")}
+                            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                                activeTab === "documents"
+                                    ? "bg-primary text-primary-foreground shadow-sm"
+                                    : "text-muted-foreground hover:text-foreground"
+                            }`}
+                        >
+                            <FileText size={13} />
+                            Documents
+                            {documents.length > 0 && (
+                                <span className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                                    activeTab === "documents" ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"
+                                }`}>{documents.length}</span>
+                            )}
+                        </button>
+                        <button
+                            type="button"
+                            id="tab-emails"
+                            onClick={() => setActiveTab("emails")}
+                            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                                activeTab === "emails"
+                                    ? "bg-primary text-primary-foreground shadow-sm"
+                                    : "text-muted-foreground hover:text-foreground"
+                            }`}
+                        >
+                            <Mail size={13} />
+                            Emails
+                            {emails.length > 0 && (
+                                <span className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                                    activeTab === "emails" ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"
+                                }`}>{emails.length}</span>
+                            )}
+                        </button>
+                    </div>
+
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                             <div>
                                 <h2 className="text-lg font-bold text-foreground">
-                                    {t("docs.title")}
+                                    {activeTab === "emails" ? "Emails" : t("docs.title")}
                                 </h2>
 
                                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                    {documents.length === 1
-                                        ? t("docs.documentCountSingular", "{count} document ready").replace("{count}", documents.length)
-                                        : t("docs.documentCount", "{count} documents ready").replace("{count}", documents.length)
+                                    {activeTab === "emails"
+                                        ? `${emails.length} email${emails.length === 1 ? "" : "s"} received without attachments`
+                                        : documents.length === 1
+                                            ? t("docs.documentCountSingular", "{count} document ready").replace("{count}", documents.length)
+                                            : t("docs.documentCount", "{count} documents ready").replace("{count}", documents.length)
                                     }
-                                    <HelpTooltip content="Documents that have been uploaded and fully processed (extracted, indexed, and summarized) are ready for search and chat." />
+                                    {activeTab === "documents" && <HelpTooltip content="Documents that have been uploaded and fully processed (extracted, indexed, and summarized) are ready for search and chat." />}
                                 </p>
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2">
+                                {activeTab === "documents" && (
                                 <button
                                     type="button"
                                     onClick={
@@ -1280,6 +1473,7 @@ export default function Documents() {
                                         ? t("docs.uploading")
                                         : t("docs.upload")}
                                 </button>
+                                )}
 
                             <input
                                 ref={
@@ -1295,12 +1489,8 @@ export default function Documents() {
 
                             <button
                                 type="button"
-                                onClick={
-                                    refreshDocuments
-                                }
-                                disabled={
-                                    isLoading
-                                }
+                                onClick={activeTab === "emails" ? refreshEmails : refreshDocuments}
+                                disabled={activeTab === "emails" ? isEmailsLoading : isLoading}
                                     className="flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-semibold text-muted-foreground transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 <RefreshCw
@@ -1308,7 +1498,7 @@ export default function Documents() {
                                         14
                                     }
                                     className={
-                                        isLoading
+                                        (activeTab === "emails" ? isEmailsLoading : isLoading)
                                             ? "animate-spin"
                                             : ""
                                     }
@@ -1363,6 +1553,7 @@ export default function Documents() {
                                 </button>
                             </div>
 
+                            {activeTab === "documents" && (
                             <button
                                 type="button"
                                 onClick={() => {
@@ -1387,11 +1578,13 @@ export default function Documents() {
                                     : t("docs.select")
                                 }
                             </button>
+                            )}
                         </div>
                     </div>
 
-                    {/* Search */}
+                    {/* Search — only shown on Documents tab */}
 
+                    {activeTab === "documents" && (
                     <form
                         onSubmit={
                             handleSearchSubmit
@@ -1536,9 +1729,10 @@ export default function Documents() {
                             </button>
                         </div>
                     </form>
+                    )}
 
                     <AnimatePresence>
-                        {semanticError && (
+                        {semanticError && activeTab === "documents" && (
                             <motion.p
                                 initial={{ opacity: 0, y: -4 }}
                                 animate={{ opacity: 1, y: 0 }}
@@ -1549,7 +1743,7 @@ export default function Documents() {
                             </motion.p>
                         )}
 
-                        {uploadError && (
+                        {uploadError && activeTab === "documents" && (
                             <motion.p
                                 initial={{ opacity: 0, y: -4 }}
                                 animate={{ opacity: 1, y: 0 }}
@@ -1560,7 +1754,7 @@ export default function Documents() {
                             </motion.p>
                         )}
 
-                        {uploadSuccess && (
+                        {uploadSuccess && activeTab === "documents" && (
                             <motion.p
                                 initial={{ opacity: 0, y: -4 }}
                                 animate={{ opacity: 1, y: 0 }}
@@ -1570,11 +1764,43 @@ export default function Documents() {
                                 {uploadSuccess}
                             </motion.p>
                         )}
+
+                        {emailsError && activeTab === "emails" && (
+                            <motion.p
+                                initial={{ opacity: 0, y: -4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0 }}
+                                className="text-xs text-destructive font-medium"
+                            >
+                                {emailsError}
+                            </motion.p>
+                        )}
                     </AnimatePresence>
                 </header>
 
-                {/* Document list */}
+                {/* ── Emails tab ── */}
+                {activeTab === "emails" && (
+                    <div className="flex min-h-0 flex-1 overflow-hidden">
+                        <EmailList
+                            emails={emails}
+                            isLoading={isEmailsLoading}
+                            selectedEmail={selectedEmail}
+                            onSelect={setSelectedEmail}
+                            onDelete={handleDeleteEmail}
+                            onRefresh={refreshEmails}
+                        />
+                        {selectedEmail && (
+                            <EmailDetailPanel
+                                email={selectedEmail}
+                                onClose={() => setSelectedEmail(null)}
+                                onDelete={handleDeleteEmail}
+                            />
+                        )}
+                    </div>
+                )}
 
+                {/* ── Documents tab ── */}
+                {activeTab === "documents" && (
                 <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
                     {isLoading ? (
                         <div className="space-y-3">
@@ -1728,6 +1954,27 @@ export default function Documents() {
                                                 onDelete={
                                                     confirmDeleteDocument
                                                 }
+                                                intakeStatus={
+                                                    intakeByFile[
+                                                        document.file_id
+                                                    ]
+                                                }
+                                                intakeBusy={
+                                                    intakeBusyFile ===
+                                                    document.file_id
+                                                }
+                                                onIntakeApprove={() =>
+                                                    handleIntakeOverride(
+                                                        document.file_id,
+                                                        "ALLOW"
+                                                    )
+                                                }
+                                                onIntakeBlock={() =>
+                                                    handleIntakeOverride(
+                                                        document.file_id,
+                                                        "BLOCK"
+                                                    )
+                                                }
                                             />
                                             </div>
                                             {isDocumentProcessing(document) && (
@@ -1783,15 +2030,40 @@ export default function Documents() {
                                                     onClick={() => openDocument(document)}
                                                     onAction={() => confirmDeleteDocument(document)}
                                                         className={`cursor-pointer transition-all ${
-                                                        selectedDocument?.file_id === document.file_id
-                                                            ? "ring-2 ring-primary/80 border-primary/50"
-                                                            : ""
-                                                    }`}
-                                                />
-                                            </motion.div>
-                                        );
-                                    }
-                                )}
+                                                            selectedDocument?.file_id === document.file_id
+                                                                ? "ring-2 ring-primary/80 border-primary/50"
+                                                                : ""
+                                                        }`}
+                                                    />
+                                                    <div className="mt-2 flex justify-end">
+                                                        <IntakeActions
+                                                            status={
+                                                                intakeByFile[
+                                                                    document.file_id
+                                                                ]
+                                                            }
+                                                            busy={
+                                                                intakeBusyFile ===
+                                                                document.file_id
+                                                            }
+                                                            onApprove={() =>
+                                                                handleIntakeOverride(
+                                                                    document.file_id,
+                                                                    "ALLOW"
+                                                                )
+                                                            }
+                                                            onBlock={() =>
+                                                                handleIntakeOverride(
+                                                                    document.file_id,
+                                                                    "BLOCK"
+                                                                )
+                                                            }
+                                                        />
+                                                    </div>
+                                                </motion.div>
+                                            );
+                                        }
+                                    )}
                             </AnimatePresence>
                         </div>
                     )}
@@ -1820,6 +2092,7 @@ export default function Documents() {
                         </div>
                     )}
                 </div>
+                )}
             </section>
             )}
 
@@ -1839,6 +2112,24 @@ export default function Documents() {
                     }
                     onDelete={
                         confirmDeleteDocument
+                    }
+                    intakeStatus={
+                        intakeByFile[selectedDocument.file_id]
+                    }
+                    intakeBusy={
+                        intakeBusyFile === selectedDocument.file_id
+                    }
+                    onIntakeApprove={() =>
+                        handleIntakeOverride(
+                            selectedDocument.file_id,
+                            "ALLOW"
+                        )
+                    }
+                    onIntakeBlock={() =>
+                        handleIntakeOverride(
+                            selectedDocument.file_id,
+                            "BLOCK"
+                        )
                     }
                 />
             )}
@@ -1888,6 +2179,69 @@ export default function Documents() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Intake gatekeeper inline actions (shown when a document is not ALLOWed)     */
+/* -------------------------------------------------------------------------- */
+
+function IntakeActions({
+    status,
+    busy,
+    onApprove,
+    onBlock,
+}) {
+    const { t } = useI18n();
+
+    if (!status) return null;
+
+    const effective = status.override_decision || status.decision;
+    if (!effective || effective === "ALLOW") return null;
+
+    const blocked = effective === "BLOCK";
+    const tone = blocked
+        ? "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+        : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400";
+
+    return (
+        <div
+            className="flex items-center gap-1.5"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+        >
+            <span
+                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold ${tone}`}
+                title={status.reason || ""}
+            >
+                <ShieldCheck size={12} />
+                {blocked
+                    ? t("intake.decisions.block")
+                    : t("intake.decisions.review")}
+            </span>
+            <button
+                type="button"
+                disabled={busy}
+                title={t("intake.decisions.overrideAllow")}
+                onClick={() => onApprove && onApprove()}
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-emerald-500/40 bg-background text-emerald-600 transition hover:bg-emerald-500/10 disabled:opacity-50 dark:text-emerald-400"
+            >
+                {busy ? (
+                    <Loader2 size={12} className="animate-spin" />
+                ) : (
+                    <CheckCircle2 size={12} />
+                )}
+            </button>
+            <button
+                type="button"
+                disabled={busy}
+                title={t("intake.decisions.overrideBlock")}
+                onClick={() => onBlock && onBlock()}
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-rose-500/40 bg-background text-rose-600 transition hover:bg-rose-500/10 disabled:opacity-50 dark:text-rose-400"
+            >
+                <Ban size={12} />
+            </button>
+        </div>
+    );
+}
+
+/* -------------------------------------------------------------------------- */
 /* Document row                                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -1896,6 +2250,10 @@ function DocumentRow({
     isSelected,
     onOpen,
     onDelete,
+    intakeStatus,
+    intakeBusy,
+    onIntakeApprove,
+    onIntakeBlock,
 }) {
     const { t } = useI18n();
     const deadlines =
@@ -1956,6 +2314,13 @@ function DocumentRow({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+                <IntakeActions
+                    status={intakeStatus}
+                    busy={intakeBusy}
+                    onApprove={onIntakeApprove}
+                    onBlock={onIntakeBlock}
+                />
+
                 {/* Inline Processing Pipeline or Collapsed Processed Status */}
                 {isShowingPipeline ? (
                     <ProcessingPipeline
@@ -2132,6 +2497,10 @@ function DocumentDetails({
     onPreview,
     onClose,
     onDelete,
+    intakeStatus,
+    intakeBusy,
+    onIntakeApprove,
+    onIntakeBlock,
 }) {
     const { t } = useI18n();
     const deadlines =
@@ -2191,8 +2560,17 @@ function DocumentDetails({
                                 size={16}
                             />
                         </button>
-                    </div>
-                </div>
+</div>
+            </div>
+
+            <div className="flex items-center gap-2 border-b border-border px-5 py-2.5">
+                <IntakeActions
+                    status={intakeStatus}
+                    busy={intakeBusy}
+                    onApprove={onIntakeApprove}
+                    onBlock={onIntakeBlock}
+                />
+            </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
                 {deadlines.length >
